@@ -6702,3 +6702,4 @@ Loaded 23 component(s) from C:\Users\pablo\OneDrive\Desktop\Workspace\san-andrea
 [2025-12-20T02:11:40-0300] [Info] [DEBUG] Pickup ID: 8, Label ID: 8
 [2025-12-20T02:11:40-0300] [Info] [DEBUG] Posicion: 1832.81, -1841.58, 13.57
 [2025-12-20T02:11:48-0300] [Info] [Vehicle Persistence] 1 vehiculos guardados al desconectarse Pablo Prieto
+[2025-12-20T02:11:48-0300] [Info] [part] pablo has left the server (0:1)
