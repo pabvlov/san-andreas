@@ -583,14 +583,14 @@ stock OnDialogBusinessConfig(playerid, response, listitem)
         {
             new iconstring[512];
             format(iconstring, sizeof(iconstring),
-                "{FFFFFF}Selecciona el icono para el negocio:\\n\\n\\\
-                {FFFF00}Iconos comunes:\\n\\\
-                {FFFFFF}1274 - Icono generico tienda\\n\\\
-                1239 - 24/7 (tienda)\\n\\\
-                1242 - Ammunation\\n\\\
-                1275 - Ropa\\n\\\
-                1559 - Ferreteria\\n\\n\\\
-                {AAAAAA}Ingresa el ID del icono (1000-1999):\");
+                "{FFFFFF}Selecciona el icono para el negocio:\n\n\
+                {FFFF00}Iconos comunes:\n\
+                {FFFFFF}1274 - Icono generico tienda\n\
+                1239 - 24/7 (tienda)\n\
+                1242 - Ammunation\n\
+                1275 - Ropa\n\
+                1559 - Ferreteria\n\n\
+                {AAAAAA}Ingresa el ID del icono (1000-1999):");
             
             ShowPlayerDialog(playerid, DIALOG_BUSINESS_CONFIG + 3, DIALOG_STYLE_INPUT,
                 "Cambiar Icono Pickup", iconstring, "Confirmar", "Volver");

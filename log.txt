@@ -8279,3 +8279,19 @@ Loaded 23 component(s) from C:\Users\pablo\OneDrive\Desktop\Workspace\san-andrea
 [2025-12-21T01:53:38-0300] [Info] [DEBUG /interior] Comando ejecutado por Pablo Prieto (Admin: 6)
 [2025-12-21T01:53:38-0300] [Info] [DEBUG /interior] Permisos OK - Mostrando dialog
 [2025-12-21T01:53:38-0300] [Info] [DEBUG /interior] Dialog mostrado - ID: 1017
+[2025-12-21T15:44:03-0300] [Info] [Vehicle Persistence] 1 vehículos guardados
+[2025-12-21T15:44:03-0300] [Info] [Vehicle Persistence] Sistema cerrado - todas las posiciones guardadas
+[2025-12-21T15:44:04-0300] [Info] [MySQL] ConexiÃ³n cerrada correctamente.
+[2025-12-21T15:44:04-0300] [Info] 
+
+*** Streamer Plugin v2.9.6 by Incognito unloaded ***
+
+[2025-12-21T15:44:04-0300] [Info] 
+[2025-12-21T15:44:04-0300] [Info]  ===============================
+[2025-12-21T15:44:04-0300] [Info] 
+[2025-12-21T15:44:04-0300] [Info]      sscanf plugin unloaded.    
+[2025-12-21T15:44:04-0300] [Info] 
+[2025-12-21T15:44:04-0300] [Info]  ===============================
+[2025-12-21T15:44:04-0300] [Info] 
+[2025-12-21T15:44:04-0300] [Info] plugin.mysql: Unloading plugin...
+[2025-12-21T15:44:04-0300] [Info] plugin.mysql: Plugin unloaded.
