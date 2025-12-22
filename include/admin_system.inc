@@ -16,6 +16,12 @@
 // Colores para mensajes admin
 #define COLOR_ADMIN_MSG (0xFF6347FF)
 
+// Forward declarations
+forward bool:IsHelper(playerid);
+forward bool:IsModerator(playerid);
+forward bool:IsAdministrator(playerid);
+forward bool:IsOwner(playerid);
+
 // Verificar permisos
 stock bool:IsHelper(playerid)
 {
@@ -76,7 +82,9 @@ CMD:acmds(playerid, params[])
         strcat(string, "/createhouse, /deletehouse, /edithouse\n");
         strcat(string, "/createshop, /deleteshop, /editshop\n");
         strcat(string, "/createbusiness, /deletebusiness, /editbusiness\n");
-        strcat(string, "/setmoney, /setadmin, /giveweapon, /jetpack\n\n");
+        strcat(string, "/setmoney, /setadmin, /giveweapon, /jetpack\n");
+        strcat(string, "/darmarma [id] [arma] [balas] - Dar arma al inventario\n");
+        strcat(string, "/darcargador [id] [tipo] [cant] - Dar munición\n\n");
     }
     
     if(IsOwner(playerid))
@@ -92,7 +100,7 @@ CMD:acmds(playerid, params[])
 // Comando de ayuda general con controles
 CMD:controles(playerid, params[])
 {
-    new string[768];
+    new string[900];
     strcat(string, "{FFFFFF}=== {00FF00}Controles del Servidor{FFFFFF} ===\n\n");
     strcat(string, "{FFD700}[Teclas de Juego]\n");
     strcat(string, "{FFFFFF}Y - Abrir inventario\n");
@@ -104,6 +112,9 @@ CMD:controles(playerid, params[])
     strcat(string, "{FFFFFF}/entrar o /salir - Entrar/salir (igual que H)\n");
     strcat(string, "{FFFFFF}/buscarvehiculo - Encontrar tus vehículos\n");
     strcat(string, "{FFFFFF}/vehiculos - Ver lista de vehículos\n\n");
+    strcat(string, "{FFD700}[Sistema de Armas]\n");
+    strcat(string, "{FFFFFF}/equipar [slot] - Equipar arma del inventario\n");
+    strcat(string, "{FFFFFF}/recargar - Recargar arma equipada\n\n");
     strcat(string, "{FFD700}[Información]\n");
     strcat(string, "{FFFFFF}/controles o /ayuda - Ver esta ayuda\n");
     strcat(string, "{AAAAAA}Usa {FFFF00}/acmds{AAAAAA} si eres administrador.\n");
@@ -811,6 +822,124 @@ public OnCheckVirtualWorldUsage(playerid, virtualworld)
         format(string, sizeof(string), "  {AAAAAA}#%d: {FFFFFF}%s {AAAAAA}(%s) - Int: %d", propid, propname, typename, interior);
         SendClientMessage(playerid, COLOR_WHITE, string);
     }
+    
+    return 1;
+}
+// ============================================================================
+// COMANDOS DE ARMAS
+// ============================================================================
+
+// Comando: /darmarma [playerid] [weapon_id o nombre] [municion]
+CMD:darmarma(playerid, params[])
+{
+    if(!IsAdministrator(playerid))
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}No tienes permisos (Nivel 3 requerido)");
+    
+    new targetid, weapon_input[64], ammo;
+    if(sscanf(params, "us[64]D(0)", targetid, weapon_input, ammo))
+    {
+        SendClientMessage(playerid, COLOR_INFO, "{FFFF00}Uso: {FFFFFF}/darmarma [playerid] [weapon_id o nombre] [municion]");
+        SendClientMessage(playerid, COLOR_INFO, "{FFFFFF}Ejemplos:");
+        SendClientMessage(playerid, COLOR_INFO, "  /darmarma 0 Desert Eagle 50");
+        SendClientMessage(playerid, COLOR_INFO, "  /darmarma 0 24 50 {AAAAAA}(ID 24 = Desert Eagle)");
+        SendClientMessage(playerid, COLOR_INFO, "  /darmarma 0 AK-47 100");
+        return 1;
+    }
+    
+    if(!IsPlayerConnected(targetid))
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}Jugador no conectado");
+    
+    if(!CharacterData[targetid][cID])
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}El jugador no tiene un personaje seleccionado");
+    
+    // Buscar arma por ID o nombre
+    new query[512];
+    if(strval(weapon_input) > 0) // Si es un número
+    {
+        mysql_format(g_MySQL, query, sizeof(query),
+            "SELECT id, name, weapon_id, weapon_ammo_capacity \
+            FROM items \
+            WHERE weapon_id = %d AND is_weapon = 1 \
+            LIMIT 1",
+            strval(weapon_input));
+    }
+    else // Si es un nombre
+    {
+        mysql_format(g_MySQL, query, sizeof(query),
+            "SELECT id, name, weapon_id, weapon_ammo_capacity \
+            FROM items \
+            WHERE name LIKE '%%%s%%' AND is_weapon = 1 \
+            LIMIT 1",
+            weapon_input);
+    }
+    
+    new tmpData[128];
+    format(tmpData, sizeof(tmpData), "%d|%d", targetid, ammo);
+    SetPVarString(playerid, "GiveWeaponData", tmpData);
+    
+    mysql_tquery(g_MySQL, query, "OnAdminGiveWeapon", "d", playerid);
+    return 1;
+}
+
+forward OnAdminGiveWeapon(adminid);
+public OnAdminGiveWeapon(adminid)
+{
+    if(cache_num_rows() == 0)
+    {
+        SendClientMessage(adminid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}Arma no encontrada en la base de datos");
+        SendClientMessage(adminid, COLOR_INFO, "{FFFFFF}Lista de algunas armas:");
+        SendClientMessage(adminid, COLOR_INFO, "  Colt 45 (ID:22), Silenced (23), Desert Eagle (24)");
+        SendClientMessage(adminid, COLOR_INFO, "  Shotgun (25), Combat Shotgun (27)");
+        SendClientMessage(adminid, COLOR_INFO, "  Micro SMG (28), MP5 (29), AK-47 (30), M4 (31)");
+        SendClientMessage(adminid, COLOR_INFO, "  Sniper Rifle (34), RPG (35)");
+        DeletePVar(adminid, "GiveWeaponData");
+        return 1;
+    }
+    
+    new tmpData[128];
+    GetPVarString(adminid, "GiveWeaponData", tmpData, sizeof(tmpData));
+    DeletePVar(adminid, "GiveWeaponData");
+    
+    new targetid, ammo_given;
+    sscanf(tmpData, "p<|>dd", targetid, ammo_given);
+    
+    new itemid, weaponid, capacity;
+    new weaponName[64];
+    
+    cache_get_value_name_int(0, "id", itemid);
+    cache_get_value_name_int(0, "weapon_id", weaponid);
+    cache_get_value_name_int(0, "weapon_ammo_capacity", capacity);
+    cache_get_value_name(0, "name", weaponName, 64);
+    
+    // Limitar munición a la capacidad máxima si no se especificó
+    if(ammo_given == 0) ammo_given = capacity;
+    if(ammo_given > capacity) ammo_given = capacity;
+    
+    // Dar el arma al inventario con munición
+    new query[512];
+    mysql_format(g_MySQL, query, sizeof(query),
+        "INSERT INTO character_inventory (character_id, item_id, quantity, current_ammo) \
+        VALUES (%d, %d, 1, %d) \
+        ON DUPLICATE KEY UPDATE quantity = quantity + 1",
+        CharacterData[targetid][cID], itemid, ammo_given);
+    mysql_tquery(g_MySQL, query);
+    
+    // Recargar inventario del jugador
+    LoadPlayerInventory(targetid);
+    
+    // Mensajes
+    new string[256];
+    format(string, sizeof(string), "{00FF00}Has dado {FFFFFF}%s {AAAAAA}(%d balas) {00FF00}a {FFFFFF}%s", 
+        weaponName, ammo_given, CharacterData[targetid][cName]);
+    SendClientMessage(adminid, COLOR_SUCCESS, string);
+    
+    format(string, sizeof(string), "{00FF00}El admin {FFFFFF}%s {00FF00}te ha dado un arma: {FFFFFF}%s {AAAAAA}(%d balas)", 
+        CharacterData[adminid][cName], weaponName, ammo_given);
+    SendClientMessage(targetid, COLOR_SUCCESS, string);
+    SendClientMessage(targetid, COLOR_INFO, "{FFFFFF}Usa {FFFF00}/inventario {FFFFFF}para verla y {FFFF00}/equipar [slot] {FFFFFF}para usarla");
+    
+    printf("[Admin Weapon] %s dio %s (%d balas) a %s", 
+        CharacterData[adminid][cName], weaponName, ammo_given, CharacterData[targetid][cName]);
     
     return 1;
 }

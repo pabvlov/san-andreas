@@ -162,6 +162,8 @@ public OnVehicleDamageStatusUpdate(vehicleid, playerid)
 // Includes de sistemas
 #include "../include/character_system.inc"
 #include "../include/inventory_system.inc"
+#include "../include/weapon_inventory.inc"
+#include "../include/dropped_items.inc"
 #include "../include/business_system.inc"
 #include "../include/property_system.inc"
 #include "../include/vehicle_engine_system.inc"
@@ -187,6 +189,13 @@ public OnGameModeInit()
     
     // Conectar a MySQL
     MySQL_Connect();
+    
+    // Cargar datos de armas y cargadores
+    LoadWeaponData();
+    LoadMagazineData();
+    
+    // Cargar items tirados en el suelo
+    LoadDroppedItems();
     
     // Inicializar sistemas
     InitVehiclePersistence();
@@ -255,8 +264,17 @@ public OnPlayerDisconnect(playerid, reason)
     
     if(CharacterData[playerid][cSelected])
     {
+        // Guardar arma equipada antes de guardar personaje
+        if(PlayerCurrentWeapon[playerid] != -1)
+        {
+            UnequipWeapon(playerid);
+        }
+        
         SaveCharacterData(playerid);
     }
+    
+    // Limpiar sistema de armas
+    WeaponInventory_OnDisconnect(playerid);
     
     // Resetear estado de tienda
     PlayerInBusiness[playerid] = -1;
@@ -495,6 +513,13 @@ public OnPlayerCommandText(playerid, cmdtext[])
     if(strcmp(cmd, "/agregarstock", true) == 0) return cmd_agregarstock(playerid, cmdtext[idx]);
     if(strcmp(cmd, "/comprar", true) == 0) return cmd_comprar(playerid, cmdtext[idx]);
     if(strcmp(cmd, "/interiores", true) == 0 || strcmp(cmd, "/int", true) == 0) return cmd_interiores(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/dararma", true) == 0) return cmd_dararma(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/darcargador", true) == 0) return cmd_darcargador(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/listarmas", true) == 0) return cmd_listarmas(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/listcargadores", true) == 0) return cmd_listcargadores(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/tirar", true) == 0) return cmd_tirar(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/recoger", true) == 0) return cmd_recoger(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/editattachedobject", true) == 0) return cmd_editattachedobject(playerid, cmdtext[idx]);
     
     return 0; // Comando no encontrado
 }

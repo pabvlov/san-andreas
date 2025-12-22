@@ -8,18 +8,57 @@
 #define _inventory_system_included
 
 #define MAX_INVENTORY_SLOTS 20
+
+// Weapon system constants
+#define MAX_WEAPON_TYPES 50
+#define MAX_MAGAZINE_TYPES 50
+
+// Datos de armas
+enum E_WEAPON_DATA
+{
+    wID,
+    wName[64],
+    wSlot,
+    wSAMPID,
+    wAmmoCapacity,
+    wHandObject,
+    wItemID
+}
+
+new WeaponData[MAX_WEAPON_TYPES][E_WEAPON_DATA];
+new TotalWeapons = 0;
+
+// Datos de cargadores
+enum E_MAGAZINE_DATA
+{
+    mID,
+    mWeaponID,
+    mName[64],
+    mCapacity,
+    mHandObject,
+    mItemID
+}
+
+new MagazineData[MAX_MAGAZINE_TYPES][E_MAGAZINE_DATA];
+new TotalMagazines = 0;
+
+// Variables de armas (usadas por weapon_inventory.inc)
+new PlayerCurrentWeapon[MAX_PLAYERS] = {-1, ...};  // ID del arma equipada (-1 = ninguna)
+new PlayerCurrentAmmo[MAX_PLAYERS] = {0, ...};     // Munición actual en el arma
+new PlayerWeaponSlot[MAX_PLAYERS] = {-1, ...};     // Slot del inventario donde está el arma
+
 #define ITEM_TYPE_KEY 1
 #define ITEM_TYPE_WEAPON 2
 
 // IDs de items (deben coincidir con la BD)
 #define ITEM_VEHICLE_KEY_MASTER 1  // Llave maestra
 #define ITEM_VEHICLE_KEY 2          // Llave normal
-#define ITEM_PISTOL_9MM 3
-#define ITEM_DESERT_EAGLE 4
-#define ITEM_PHONE 5
-#define ITEM_REPAIR_KIT 6
-#define ITEM_BURGER 7
-#define ITEM_WATER 8
+// IDs 9-35: Armas (ver database_weapons.sql)
+// IDs 36-50: Cargadores (ver database_weapons.sql)
+#define ITEM_PHONE 51
+#define ITEM_REPAIR_KIT 52
+#define ITEM_BURGER 53
+#define ITEM_WATER 54
 
 // Enumeración de items
 enum E_INVENTORY_ITEM
@@ -60,11 +99,18 @@ stock LoadPlayerInventory(playerid)
     
     for(new i = 0; i < rows && i < MAX_INVENTORY_SLOTS; i++)
     {
-        cache_get_value_name_int(i, "id", PlayerInventory[playerid][i][invItemID]);
-        cache_get_value_name_int(i, "character_id", PlayerInventory[playerid][i][invCharacterID]);
-        cache_get_value_name_int(i, "slot", PlayerInventory[playerid][i][invSlot]);
-        cache_get_value_name_int(i, "quantity", PlayerInventory[playerid][i][invQuantity]);
-        cache_get_value_name(i, "metadata", PlayerInventory[playerid][i][invMetadata], 128);
+        new slotNum;
+        cache_get_value_name_int(i, "slot", slotNum);
+        
+        // Cargar en el slot correcto (no por índice i)
+        cache_get_value_name_int(i, "item_id", PlayerInventory[playerid][slotNum][invItemID]); // FIX: era ci.id, ahora ci.item_id
+        PlayerInventory[playerid][slotNum][invCharacterID] = CharacterData[playerid][cID];
+        PlayerInventory[playerid][slotNum][invSlot] = slotNum;
+        cache_get_value_name_int(i, "quantity", PlayerInventory[playerid][slotNum][invQuantity]);
+        cache_get_value_name(i, "metadata", PlayerInventory[playerid][slotNum][invMetadata], 128);
+        
+        printf("[Inventory] - Slot %d: ItemID=%d, Quantity=%d", 
+            slotNum, PlayerInventory[playerid][slotNum][invItemID], PlayerInventory[playerid][slotNum][invQuantity]);
         
         PlayerInventoryCount[playerid]++;
     }
@@ -72,6 +118,32 @@ stock LoadPlayerInventory(playerid)
     cache_delete(result);
     
     printf("[Inventory] Cargados %d items para %s", PlayerInventoryCount[playerid], CharacterData[playerid][cName]);
+    
+    // Auto-equipar arma si tenía el flag "equipped"
+    for(new i = 0; i < MAX_INVENTORY_SLOTS; i++)
+    {
+        if(PlayerInventory[playerid][i][invItemID] > 0)
+        {
+            new metadata[128];
+            format(metadata, sizeof(metadata), "%s", PlayerInventory[playerid][i][invMetadata]);
+            
+            // Buscar flag equipped:1
+            if(strfind(metadata, "\"equipped\":1") != -1)
+            {
+                // Es un arma que estaba equipada, equiparla automáticamente
+                for(new w = 0; w < TotalWeapons; w++)
+                {
+                    if(WeaponData[w][wItemID] == PlayerInventory[playerid][i][invItemID])
+                    {
+                        EquipWeaponFromInventory(playerid, i);
+                        printf("[Inventory] Auto-equipando arma del slot %d (estaba equipada al desconectar)", i);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    
     return 1;
 }
 
@@ -130,6 +202,64 @@ stock GivePlayerItem(playerid, itemid, quantity = 1, const metadata[] = "")
     return 0;
 }
 
+// Obtener cantidad a mostrar (balas si es arma, cantidad normal si no)
+stock GetItemDisplayQuantity(playerid, slot)
+{
+    new itemid = PlayerInventory[playerid][slot][invItemID];
+    
+    // Verificar si es un arma
+    for(new i = 0; i < TotalWeapons; i++)
+    {
+        if(WeaponData[i][wItemID] == itemid)
+        {
+            // Es un arma, buscar balas en metadata
+            new metadata[128];
+            format(metadata, sizeof(metadata), "%s", PlayerInventory[playerid][slot][invMetadata]);
+            
+            if(strlen(metadata) > 0)
+            {
+                // Parsear JSON para obtener ammo
+                new pos = strfind(metadata, "ammo\":");
+                if(pos != -1)
+                {
+                    pos += 6; // Saltar "ammo":
+                    new ammoStr[16];
+                    new idx = 0;
+                    while(metadata[pos] >= '0' && metadata[pos] <= '9' && idx < 15)
+                    {
+                        ammoStr[idx++] = metadata[pos++];
+                    }
+                    ammoStr[idx] = 0;
+                    return strval(ammoStr);
+                }
+            }
+            return 0; // Arma sin balas
+        }
+    }
+    
+    // No es arma, retornar cantidad normal
+    return PlayerInventory[playerid][slot][invQuantity];
+}
+
+// Obtener metadata de un item
+stock GetPlayerInventoryMetadata(playerid, slot, metadata[], maxlen)
+{
+    if(slot < 0 || slot >= MAX_INVENTORY_SLOTS)
+    {
+        metadata[0] = 0;
+        return 0;
+    }
+    
+    if(PlayerInventory[playerid][slot][invItemID] == 0)
+    {
+        metadata[0] = 0;
+        return 0;
+    }
+    
+    format(metadata, maxlen, "%s", PlayerInventory[playerid][slot][invMetadata]);
+    return 1;
+}
+
 // Remover item del inventario
 stock RemovePlayerItem(playerid, slot)
 {
@@ -164,6 +294,19 @@ stock HoldItemLeft(playerid, slot)
     new itemid = PlayerInventory[playerid][slot][invItemID];
     if(itemid == 0)
         return 0;
+    
+    // Verificar si es un cargador (debe ir en mano izquierda)
+    if(IsMagazineItem(itemid))
+    {
+        return EquipMagazineFromInventory(playerid, slot);
+    }
+    
+    // Verificar si es un arma (no puede ir en mano izquierda)
+    if(IsWeaponItem(itemid))
+    {
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Las armas deben ir en la mano derecha. Usa la mano izquierda solo para cargadores.");
+        return 0;
+    }
     
     // Remover objeto actual si existe
     if(PlayerHeldObjectLeft[playerid] != INVALID_OBJECT_ID)
@@ -211,6 +354,19 @@ stock HoldItem(playerid, slot)
     new itemid = PlayerInventory[playerid][slot][invItemID];
     if(itemid == 0)
         return 0;
+    
+    // Verificar si es un arma (debe ir en mano derecha)
+    if(IsWeaponItem(itemid))
+    {
+        return EquipWeaponFromInventory(playerid, slot);
+    }
+    
+    // Verificar si es un cargador (no puede ir en mano derecha)
+    if(IsMagazineItem(itemid))
+    {
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Los cargadores deben ir en la mano izquierda. Usa la mano derecha solo para armas.");
+        return 0;
+    }
     
     // Remover objeto actual si existe
     if(PlayerHeldObjectRight[playerid] != INVALID_OBJECT_ID)
@@ -266,18 +422,38 @@ stock UnholdItem(playerid)
 // Obtener nombre del item
 stock GetItemName(itemid, name[], size = sizeof(name))
 {
+    // Intentar buscar en armas primero
+    for(new i = 0; i < TotalWeapons; i++)
+    {
+        if(WeaponData[i][wItemID] == itemid)
+        {
+            format(name, size, "%s", WeaponData[i][wName]);
+            return 1;
+        }
+    }
+    
+    // Intentar buscar en cargadores
+    for(new i = 0; i < TotalMagazines; i++)
+    {
+        if(MagazineData[i][mItemID] == itemid)
+        {
+            format(name, size, "%s", MagazineData[i][mName]);
+            return 1;
+        }
+    }
+    
+    // Items fijos del sistema
     switch(itemid)
     {
         case ITEM_VEHICLE_KEY_MASTER: format(name, size, "Llave Maestra");
         case ITEM_VEHICLE_KEY: format(name, size, "Llave Normal");
-        case ITEM_PISTOL_9MM: format(name, size, "Pistola 9mm");
-        case ITEM_DESERT_EAGLE: format(name, size, "Desert Eagle");
         case ITEM_PHONE: format(name, size, "Telefono Celular");
         case ITEM_REPAIR_KIT: format(name, size, "Kit de Reparacion");
         case ITEM_BURGER: format(name, size, "Hamburguesa");
         case ITEM_WATER: format(name, size, "Agua");
-        default: format(name, size, "Item Desconocido");
+        default: format(name, size, "Item Desconocido (ID:%d)", itemid);
     }
+    return 1;
 }
 
 // Verificar si tiene llave del vehículo
@@ -316,8 +492,9 @@ CMD:inventario(playerid, params[])
     {
         new slot = PlayerHeldItemSlotLeft[playerid];
         GetItemName(PlayerInventory[playerid][slot][invItemID], itemName);
+        new quantity = GetItemDisplayQuantity(playerid, slot);
         format(line, sizeof(line), "{00FF00}[Mano Izquierda]\t%s\t%d\n",
-            itemName, PlayerInventory[playerid][slot][invQuantity]);
+            itemName, quantity);
         strcat(dialogStr, line);
     }
     else
@@ -330,8 +507,9 @@ CMD:inventario(playerid, params[])
     {
         new slot = PlayerHeldItemSlotRight[playerid];
         GetItemName(PlayerInventory[playerid][slot][invItemID], itemName);
+        new quantity = GetItemDisplayQuantity(playerid, slot);
         format(line, sizeof(line), "{00FF00}[Mano Derecha]\t%s\t%d\n",
-            itemName, PlayerInventory[playerid][slot][invQuantity]);
+            itemName, quantity);
         strcat(dialogStr, line);
     }
     else
@@ -349,8 +527,9 @@ CMD:inventario(playerid, params[])
                 continue;
             
             GetItemName(PlayerInventory[playerid][i][invItemID], itemName);
+            new quantity = GetItemDisplayQuantity(playerid, i);
             format(line, sizeof(line), "Bolsillo %d\t%s\t%d\n",
-                i + 1, itemName, PlayerInventory[playerid][i][invQuantity]);
+                i, itemName, quantity);  // Mostrar índice real (0-19)
             strcat(dialogStr, line);
         }
     }
@@ -388,8 +567,16 @@ stock OnDialogInventory(playerid, response, listitem)
     {
         if(PlayerHeldItemSlotRight[playerid] != -1)
         {
-            // Desequipar mano derecha
-            UnholdItem(playerid);
+            // Si es un arma, ejecutar UnequipWeapon para guardar munición
+            if(PlayerCurrentWeapon[playerid] != -1)
+            {
+                UnequipWeapon(playerid);
+            }
+            else
+            {
+                // Si no es arma, desequipar normal
+                UnholdItem(playerid);
+            }
         }
         return 1;
     }
@@ -435,6 +622,19 @@ stock OnDialogInventory(playerid, response, listitem)
 
 CMD:usar(playerid, params[])
 {
+    // PRIORIDAD 1: Si tiene arma en mano derecha y cargador en mano izquierda, recargar
+    if(PlayerCurrentWeapon[playerid] != -1 && PlayerHeldItemSlotLeft[playerid] != -1)
+    {
+        new magSlot = PlayerHeldItemSlotLeft[playerid];
+        new magItemID = PlayerInventory[playerid][magSlot][invItemID];
+        
+        if(IsMagazineItem(magItemID))
+        {
+            return ReloadWeaponFromMagazine(playerid);
+        }
+    }
+    
+    // PRIORIDAD 2: Usar item del slot especificado
     new slot;
     if(sscanf(params, "d", slot))
         return SendClientMessage(playerid, COLOR_ERROR, "Uso: /usar [slot]");
@@ -504,6 +704,27 @@ CMD:usar(playerid, params[])
 
 CMD:guardar(playerid, params[])
 {
+    // Verificar si tiene arma equipada
+    if(PlayerCurrentWeapon[playerid] != -1)
+    {
+        UnequipWeapon(playerid);
+        return 1;
+    }
+    
+    // Verificar si tiene cargador en mano izquierda
+    if(PlayerHeldItemSlotLeft[playerid] != -1)
+    {
+        new magSlot = PlayerHeldItemSlotLeft[playerid];
+        new magItemID = PlayerInventory[playerid][magSlot][invItemID];
+        
+        if(IsMagazineItem(magItemID))
+        {
+            UnequipMagazine(playerid);
+            return 1;
+        }
+    }
+    
+    // Items normales
     if(PlayerHeldObject[playerid] == INVALID_OBJECT_ID)
         return SendClientMessage(playerid, COLOR_ERROR, "No tienes nada equipado.");
     
@@ -545,6 +766,49 @@ CMD:giveitem(playerid, params[])
     {
         SendClientMessage(playerid, COLOR_ERROR, "Error al dar el item.");
     }
+    
+    return 1;
+}
+
+// Comando /tirar - Tirar item al suelo
+CMD:tirar(playerid, params[])
+{
+    if(!CharacterData[playerid][cSelected])
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Debes estar logueado.");
+    
+    new slot;
+    if(sscanf(params, "d", slot))
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Uso: /tirar [slot] (usa /inv para ver los slots)");
+    
+    if(slot < 0 || slot >= MAX_INVENTORY_SLOTS)
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Slot inválido (0-19).");
+    
+    new result = DropItemToGround(playerid, slot);
+    
+    if(result == -1)
+        return 1;
+    
+    // Mostrar animación
+    ApplyAnimation(playerid, "BOMBER", "BOM_PLANT", 4.1, false, false, false, false, 0);
+    
+    return 1;
+}
+
+// Comando /recoger - Recoger item del suelo
+CMD:recoger(playerid, params[])
+{
+    if(!CharacterData[playerid][cSelected])
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Debes estar logueado.");
+    
+    new dropSlot = GetNearestDroppedItem(playerid, 2.0); // 2 metros de distancia
+    
+    if(dropSlot == -1)
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}No hay ningún item cerca.");
+    
+    PickupDroppedItem(playerid, dropSlot);
+    
+    // Animación de agacharse
+    ApplyAnimation(playerid, "BOMBER", "BOM_PLANT", 4.1, false, false, false, false, 0);
     
     return 1;
 }
