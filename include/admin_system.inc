@@ -1054,6 +1054,8 @@ CMD:dar(playerid, params[])
         Jetpack\n\
         Skins\n\
         Autos\n\
+        Armas\n\
+        Cargadores\n\
         Necesidades");
     
     ShowPlayerDialog(playerid, DIALOG_ADMIN_DAR, DIALOG_STYLE_LIST, title, dialog, "Seleccionar", "Cancelar");

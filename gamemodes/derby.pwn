@@ -62,7 +62,13 @@
 #define DIALOG_ADMIN_DAR_MONEY 1029
 #define DIALOG_ADMIN_DAR_SKIN 1030
 #define DIALOG_ADMIN_DAR_VEHICLE 1031
-#define DIALOG_ADMIN_VEHICLE_RESPAWN 1032
+#define DIALOG_ADMIN_DAR_VEHICLE_SEARCH 1032
+#define DIALOG_ADMIN_DAR_VEHICLE_RESULT 1033
+#define DIALOG_ADMIN_DAR_WEAPON 1034
+#define DIALOG_ADMIN_DAR_WEAPON_QUANTITY 1035
+#define DIALOG_ADMIN_DAR_MAGAZINE 1036
+#define DIALOG_ADMIN_DAR_MAGAZINE_QUANTITY 1037
+#define DIALOG_ADMIN_VEHICLE_RESPAWN 1038
 
 #define MAX_CHARACTERS_PER_USER 3
 
@@ -616,10 +622,18 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
         return OnDialogAdminDarSkin(playerid, response, inputtext);
     if(dialogid == DIALOG_ADMIN_DAR_VEHICLE)
         return OnDialogAdminDarVehicle(playerid, response, listitem);
-    if(dialogid == DIALOG_ADMIN_DAR_VEHICLE + 1)
+    if(dialogid == DIALOG_ADMIN_DAR_VEHICLE_SEARCH)
         return OnDialogAdminDarVehicleSearch(playerid, response, inputtext);
-    if(dialogid == DIALOG_ADMIN_DAR_VEHICLE + 2)
+    if(dialogid == DIALOG_ADMIN_DAR_VEHICLE_RESULT)
         return OnDialogAdminDarVehSearch(playerid, response, listitem, inputtext);
+    if(dialogid == DIALOG_ADMIN_DAR_WEAPON)
+        return OnDialogAdminDarWeapon(playerid, response, listitem);
+    if(dialogid == DIALOG_ADMIN_DAR_WEAPON_QUANTITY)
+        return OnDialogAdminDarWeaponQuantity(playerid, response, inputtext);
+    if(dialogid == DIALOG_ADMIN_DAR_MAGAZINE)
+        return OnDialogAdminDarMagazine(playerid, response, listitem);
+    if(dialogid == DIALOG_ADMIN_DAR_MAGAZINE_QUANTITY)
+        return OnDialogAdminDarMagQty(playerid, response, inputtext);
     
     // Dialog de inventario
     if(dialogid == DIALOG_INVENTORY)

@@ -453,7 +453,36 @@ stock OnDialogAdminDar(playerid, response, listitem)
                 vehiclelist,
                 "Dar", "Cancelar");
         }
-        case 6: // Necesidades
+        case 6: // Armas
+        {
+            new weaponlist[2048];
+            for(new i = 0; i < TotalWeapons; i++)
+            {
+                new line[64];
+                format(line, sizeof(line), "%s (ID:%d)\n", WeaponData[i][wName], WeaponData[i][wID]);
+                strcat(weaponlist, line);
+            }
+            ShowPlayerDialog(playerid, DIALOG_ADMIN_DAR_WEAPON, DIALOG_STYLE_LIST,
+                "Dar Arma",
+                weaponlist,
+                "Seleccionar", "Cancelar");
+        }
+        case 7: // Cargadores
+        {
+            new maglist[2048];
+            for(new i = 0; i < TotalMagazines && i < 20; i++) // Limitar a 20 para no overflow
+            {
+                new line[80];
+                format(line, sizeof(line), "%s (ID:%d - Arma:%d)\n", 
+                    MagazineData[i][mName], MagazineData[i][mID], MagazineData[i][mWeaponID]);
+                strcat(maglist, line);
+            }
+            ShowPlayerDialog(playerid, DIALOG_ADMIN_DAR_MAGAZINE, DIALOG_STYLE_LIST,
+                "Dar Cargador",
+                maglist,
+                "Seleccionar", "Cancelar");
+        }
+        case 8: // Necesidades
         {
             // TODO: Implementar cuando el sistema de necesidades esté listo
             SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Sistema de necesidades en desarrollo.");
@@ -558,7 +587,7 @@ stock OnDialogAdminDarVehicle(playerid, response, listitem)
     // Si selecciona "Buscar por nombre"
     if(listitem == 0)
     {
-        ShowPlayerDialog(playerid, DIALOG_ADMIN_DAR_VEHICLE + 1, DIALOG_STYLE_INPUT,
+        ShowPlayerDialog(playerid, DIALOG_ADMIN_DAR_VEHICLE_SEARCH, DIALOG_STYLE_INPUT,
             "Buscar Vehículo",
             "{FFFFFF}Ingresa el nombre del vehículo a buscar:",
             "Buscar", "Cancelar");
@@ -648,7 +677,7 @@ stock OnDialogAdminDarVehicleSearch(playerid, response, inputtext[])
         return 1;
     }
     
-    ShowPlayerDialog(playerid, DIALOG_ADMIN_DAR_VEHICLE + 2, DIALOG_STYLE_LIST,
+    ShowPlayerDialog(playerid, DIALOG_ADMIN_DAR_VEHICLE_RESULT, DIALOG_STYLE_LIST,
         "Resultados de Búsqueda",
         searchResults,
         "Dar", "Cancelar");
@@ -706,5 +735,194 @@ stock OnDialogAdminDarVehSearch(playerid, response, listitem, const inputtext[])
     printf("[Admin] %s dio %s (ID: %d) a %s via busqueda", 
         CharacterData[playerid][cName], VehicleNames[vehicleIndex], vehicleid, CharacterData[targetid][cName]);
     
+    return 1;
+}
+
+// ==================== HANDLERS DE ARMAS Y CARGADORES ====================
+
+// Variables temporales para armas/cargadores
+new AdminSelectedWeapon[MAX_PLAYERS] = {-1, ...};
+new AdminSelectedMagazine[MAX_PLAYERS] = {-1, ...};
+
+// Handler para selección de arma
+stock OnDialogAdminDarWeapon(playerid, response, listitem)
+{
+    if(!response) return 1;
+    
+    new targetid = AdminDarTarget[playerid];
+    if(!IsPlayerConnected(targetid))
+    {
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}El jugador ya no está conectado.");
+        return 1;
+    }
+    
+    if(listitem >= TotalWeapons) return 1;
+    
+    // Guardar arma seleccionada
+    AdminSelectedWeapon[playerid] = listitem;
+    
+    // Preguntar cantidad
+    new dialog[256];
+    format(dialog, sizeof(dialog),
+        "{FFFFFF}Has seleccionado: {FFFF00}%s\n\n\
+        {FFFFFF}Ingresa la cantidad a dar (1-100):",
+        WeaponData[listitem][wName]);
+    
+    ShowPlayerDialog(playerid, DIALOG_ADMIN_DAR_WEAPON_QUANTITY, DIALOG_STYLE_INPUT,
+        "Cantidad de Armas", dialog, "Dar", "Cancelar");
+    
+    return 1;
+}
+
+// Handler para cantidad de armas
+stock OnDialogAdminDarWeaponQuantity(playerid, response, const inputtext[])
+{
+    if(!response)
+    {
+        AdminSelectedWeapon[playerid] = -1;
+        return 1;
+    }
+    
+    new targetid = AdminDarTarget[playerid];
+    if(!IsPlayerConnected(targetid))
+    {
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}El jugador ya no está conectado.");
+        AdminSelectedWeapon[playerid] = -1;
+        return 1;
+    }
+    
+    new weaponIdx = AdminSelectedWeapon[playerid];
+    if(weaponIdx == -1 || weaponIdx >= TotalWeapons) return 1;
+    
+    new quantity = strval(inputtext);
+    if(quantity < 1 || quantity > 100)
+    {
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Cantidad inválida (1-100).");
+        AdminSelectedWeapon[playerid] = -1;
+        return 1;
+    }
+    
+    // Verificar que el arma tenga item_id
+    if(WeaponData[weaponIdx][wItemID] == 0)
+    {
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Esta arma no tiene item_id configurado.");
+        AdminSelectedWeapon[playerid] = -1;
+        return 1;
+    }
+    
+    // Dar arma al inventario
+    if(GivePlayerItem(targetid, WeaponData[weaponIdx][wItemID], quantity, ""))
+    {
+        new string[144];
+        format(string, sizeof(string), "{00FF00}Has dado {FFFFFF}%d x %s {00FF00}a {FFFFFF}%s",
+            quantity, WeaponData[weaponIdx][wName], CharacterData[targetid][cName]);
+        SendClientMessage(playerid, COLOR_SUCCESS, string);
+        
+        format(string, sizeof(string), "{FFD700}Admin {FFFFFF}%s {FFD700}te ha dado {FFFFFF}%d x %s",
+            CharacterData[playerid][cName], quantity, WeaponData[weaponIdx][wName]);
+        SendClientMessage(targetid, COLOR_ADMIN_MSG, string);
+        
+        printf("[Admin] %s dio %d x %s a %s via /dar", 
+            CharacterData[playerid][cName], quantity, WeaponData[weaponIdx][wName], CharacterData[targetid][cName]);
+    }
+    else
+    {
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error al dar el arma. Inventario lleno?");
+    }
+    
+    AdminSelectedWeapon[playerid] = -1;
+    return 1;
+}
+
+// Handler para selección de cargador
+stock OnDialogAdminDarMagazine(playerid, response, listitem)
+{
+    if(!response) return 1;
+    
+    new targetid = AdminDarTarget[playerid];
+    if(!IsPlayerConnected(targetid))
+    {
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}El jugador ya no está conectado.");
+        return 1;
+    }
+    
+    if(listitem >= TotalMagazines) return 1;
+    
+    // Guardar cargador seleccionado
+    AdminSelectedMagazine[playerid] = listitem;
+    
+    // Preguntar cantidad
+    new dialog[256];
+    format(dialog, sizeof(dialog),
+        "{FFFFFF}Has seleccionado: {FFFF00}%s\n\
+        {AAAAAA}Para arma ID: %d (%d balas)\n\n\
+        {FFFFFF}Ingresa la cantidad a dar (1-100):",
+        MagazineData[listitem][mName],
+        MagazineData[listitem][mWeaponID],
+        MagazineData[listitem][mCapacity]);
+    
+    ShowPlayerDialog(playerid, DIALOG_ADMIN_DAR_MAGAZINE_QUANTITY, DIALOG_STYLE_INPUT,
+        "Cantidad de Cargadores", dialog, "Dar", "Cancelar");
+    
+    return 1;
+}
+
+// Handler para cantidad de cargadores
+stock OnDialogAdminDarMagQty(playerid, response, const inputtext[])
+{
+    if(!response)
+    {
+        AdminSelectedMagazine[playerid] = -1;
+        return 1;
+    }
+    
+    new targetid = AdminDarTarget[playerid];
+    if(!IsPlayerConnected(targetid))
+    {
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}El jugador ya no está conectado.");
+        AdminSelectedMagazine[playerid] = -1;
+        return 1;
+    }
+    
+    new magIdx = AdminSelectedMagazine[playerid];
+    if(magIdx == -1 || magIdx >= TotalMagazines) return 1;
+    
+    new quantity = strval(inputtext);
+    if(quantity < 1 || quantity > 100)
+    {
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Cantidad inválida (1-100).");
+        AdminSelectedMagazine[playerid] = -1;
+        return 1;
+    }
+    
+    // Verificar que el cargador tenga item_id
+    if(MagazineData[magIdx][mItemID] == 0)
+    {
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Este cargador no tiene item_id configurado.");
+        AdminSelectedMagazine[playerid] = -1;
+        return 1;
+    }
+    
+    // Dar cargador al inventario
+    if(GivePlayerItem(targetid, MagazineData[magIdx][mItemID], quantity, ""))
+    {
+        new string[144];
+        format(string, sizeof(string), "{00FF00}Has dado {FFFFFF}%d x %s {00FF00}a {FFFFFF}%s",
+            quantity, MagazineData[magIdx][mName], CharacterData[targetid][cName]);
+        SendClientMessage(playerid, COLOR_SUCCESS, string);
+        
+        format(string, sizeof(string), "{FFD700}Admin {FFFFFF}%s {FFD700}te ha dado {FFFFFF}%d x %s",
+            CharacterData[playerid][cName], quantity, MagazineData[magIdx][mName]);
+        SendClientMessage(targetid, COLOR_ADMIN_MSG, string);
+        
+        printf("[Admin] %s dio %d x %s a %s via /dar", 
+            CharacterData[playerid][cName], quantity, MagazineData[magIdx][mName], CharacterData[targetid][cName]);
+    }
+    else
+    {
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error al dar el cargador. Inventario lleno?");
+    }
+    
+    AdminSelectedMagazine[playerid] = -1;
     return 1;
 }
