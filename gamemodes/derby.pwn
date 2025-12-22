@@ -50,6 +50,19 @@
 #define DIALOG_INTERIORS_LIST 1017
 #define DIALOG_BUSINESS_SHOP 1018
 #define DIALOG_BUSINESS_CONFIG 1019
+#define DIALOG_INFO 1020
+#define DIALOG_ADMIN_PANEL 1021
+#define DIALOG_ADMIN_PANEL_KICK 1022
+#define DIALOG_ADMIN_PANEL_BAN 1023
+#define DIALOG_ADMIN_PANEL_BAN_TIME 1024
+#define DIALOG_ADMIN_PANEL_WARN 1025
+#define DIALOG_ADMIN_PANEL_STATS 1026
+#define DIALOG_ADMIN_PANEL_INV 1027
+#define DIALOG_ADMIN_DAR 1028
+#define DIALOG_ADMIN_DAR_MONEY 1029
+#define DIALOG_ADMIN_DAR_SKIN 1030
+#define DIALOG_ADMIN_DAR_VEHICLE 1031
+#define DIALOG_ADMIN_VEHICLE_RESPAWN 1032
 
 #define MAX_CHARACTERS_PER_USER 3
 
@@ -168,6 +181,7 @@ public OnVehicleDamageStatusUpdate(vehicleid, playerid)
 #include "../include/vehicle_persistence.inc"
 #include "../include/dealership_system.inc"
 #include "../include/admin_system.inc"
+#include "../include/admin_dialogs.inc"
 #include "../include/zones/unity_station.inc"
 
 main()
@@ -485,6 +499,10 @@ public OnPlayerCommandText(playerid, cmdtext[])
     if(strcmp(cmd, "/engine", true) == 0) return cmd_engine(playerid, cmdtext[idx]);
     if(strcmp(cmd, "/m", true) == 0) return cmd_m(playerid, cmdtext[idx]);
     if(strcmp(cmd, "/jetpack", true) == 0) return cmd_jetpack(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/setadmin", true) == 0) return cmd_setadmin(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/panel", true) == 0) return cmd_panel(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/dar", true) == 0) return cmd_dar(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/afk", true) == 0) return cmd_afk(playerid, cmdtext[idx]);
     if(strcmp(cmd, "/vehiculos", true) == 0) return cmd_vehiculos(playerid, cmdtext[idx]);
     if(strcmp(cmd, "/buscarvehiculo", true) == 0) return cmd_buscarvehiculo(playerid, cmdtext[idx]);
     if(strcmp(cmd, "/buscarcarro", true) == 0) return cmd_buscarcarro(playerid, cmdtext[idx]);
@@ -547,6 +565,36 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
         return OnDialogAdminVehicleActions(playerid, response, listitem);
     if(dialogid == DIALOG_ADMIN_VEHICLE_DELETE_CONFIRM)
         return OnAdminVehicleDelConfirm(playerid, response);
+    
+    // Dialogs del panel de administración
+    if(dialogid == DIALOG_ADMIN_PANEL)
+        return OnDialogAdminPanel(playerid, response, listitem);
+    if(dialogid == DIALOG_ADMIN_PANEL_KICK)
+        return OnDialogAdminPanelKick(playerid, response, inputtext);
+    if(dialogid == DIALOG_ADMIN_PANEL_BAN)
+        return OnDialogAdminPanelBan(playerid, response, inputtext);
+    if(dialogid == DIALOG_ADMIN_PANEL_BAN_TIME)
+        return OnDialogAdminPanelBanTime(playerid, response, inputtext);
+    if(dialogid == DIALOG_ADMIN_PANEL_WARN)
+        return OnDialogAdminPanelWarn(playerid, response, inputtext);
+    if(dialogid == DIALOG_ADMIN_PANEL_STATS)
+        return 1;
+    if(dialogid == DIALOG_ADMIN_PANEL_INV)
+        return 1;
+    
+    // Dialogs del comando /dar
+    if(dialogid == DIALOG_ADMIN_DAR)
+        return OnDialogAdminDar(playerid, response, listitem);
+    if(dialogid == DIALOG_ADMIN_DAR_MONEY)
+        return OnDialogAdminDarMoney(playerid, response, listitem);
+    if(dialogid == DIALOG_ADMIN_DAR_SKIN)
+        return OnDialogAdminDarSkin(playerid, response, inputtext);
+    if(dialogid == DIALOG_ADMIN_DAR_VEHICLE)
+        return OnDialogAdminDarVehicle(playerid, response, listitem);
+    if(dialogid == DIALOG_ADMIN_DAR_VEHICLE + 1)
+        return OnDialogAdminDarVehicleSearch(playerid, response, inputtext);
+    if(dialogid == DIALOG_ADMIN_DAR_VEHICLE + 2)
+        return OnDialogAdminDarVehicleSearchResult(playerid, response, listitem, inputtext);
     
     // Dialog de inventario
     if(dialogid == DIALOG_INVENTORY)
@@ -1049,6 +1097,7 @@ MySQL_CreateTables()
         `salt` VARCHAR(32) NOT NULL,\
         `email` VARCHAR(100) DEFAULT NULL,\
         `admin_level` INT DEFAULT 0,\
+        `warnings` INT DEFAULT 0,\
         `registered` DATETIME DEFAULT CURRENT_TIMESTAMP,\
         `last_login` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\
         PRIMARY KEY (`id`),\
@@ -1074,6 +1123,21 @@ MySQL_CreateTables()
         `last_played` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\
         PRIMARY KEY (`id`),\
         UNIQUE KEY `name` (`name`)\
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8;");
+    
+    mysql_tquery(g_MySQL, "CREATE TABLE IF NOT EXISTS `admin_sanctions` (\
+        `id` INT NOT NULL AUTO_INCREMENT,\
+        `user_id` INT NOT NULL,\
+        `admin_id` INT NOT NULL,\
+        `admin_name` VARCHAR(50) NOT NULL,\
+        `sanction_type` VARCHAR(20) NOT NULL,\
+        `reason` VARCHAR(255) NOT NULL,\
+        `duration` INT DEFAULT 0,\
+        `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,\
+        PRIMARY KEY (`id`),\
+        INDEX `user_id` (`user_id`),\
+        INDEX `admin_id` (`admin_id`),\
+        INDEX `sanction_type` (`sanction_type`)\
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8;");
     
     print("[MySQL] Tablas verificadas/creadas correctamente.");

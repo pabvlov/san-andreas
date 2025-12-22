@@ -55,7 +55,6 @@ CMD:acmds(playerid, params[])
     if(IsHelper(playerid))
     {
         strcat(string, "{FFD700}[Nivel 1 - Ayudante]{FFFFFF}\n");
-        strcat(string, "/kick, /mute, /unmute, /warn, /ajail\n");
         strcat(string, "/interior (/int) - Teleport a interiores\n");
         strcat(string, "/setint [id] - Cambiar interior ID\n");
         strcat(string, "/setvw [id] - Cambiar virtual world\n");
@@ -66,8 +65,11 @@ CMD:acmds(playerid, params[])
     if(IsModerator(playerid))
     {
         strcat(string, "{FFD700}[Nivel 2 - Moderador]{FFFFFF}\n");
-        strcat(string, "/ban, /sban, /freeze, /unfreeze, /goto, /gethere\n");
-        strcat(string, "/vehiculos [playerid] - Gestionar vehículos\n\n");
+        strcat(string, "/panel [playerid] - Gestión completa de jugadores\n");
+        strcat(string, "{AAAAAA}  (Ir, Traer, Mutear, Freeze, Warn, Jail, Kick, Ban, Espectar)\n");
+        strcat(string, "/vehiculos [playerid] - Gestionar vehículos\n");
+        strcat(string, "/dar [playerid] - Dar items/beneficios (Vida, Armadura, Dinero, Jetpack, Skins, Autos)\n");
+        strcat(string, "/afk - Activar/desactivar modo AFK\n\n");
     }
     
     if(IsAdministrator(playerid))
@@ -83,6 +85,7 @@ CMD:acmds(playerid, params[])
     {
         strcat(string, "{FFD700}[Nivel 4 - Dueño]{FFFFFF}\n");
         strcat(string, "/gmx, /loadfs, /unloadfs, /setweather, /settime\n");
+        strcat(string, "/setadmin [playerid] [nivel] - Otorgar rango de admin\n");
     }
     
     ShowPlayerDialog(playerid, 0, DIALOG_STYLE_MSGBOX, "Comandos de Administración", string, "Cerrar", "");
@@ -220,9 +223,168 @@ CMD:jetpack(playerid, params[])
     return 1;
 }
 
+// Comando: /setadmin - Otorgar rango de administrador
+CMD:setadmin(playerid, params[])
+{
+    if(!IsOwner(playerid))
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}Necesitas ser Dueño nivel 4.");
+    
+    if(!UserData[playerid][uLogged])
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}Debes estar logueado.");
+    
+    new targetid, adminlevel;
+    
+    // Verificar si se proporcionaron parámetros
+    if(sscanf(params, "ud", targetid, adminlevel))
+    {
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Uso: {FFFFFF}/setadmin [playerid] [nivel]");
+        SendClientMessage(playerid, COLOR_INFO, "{33CCFF}Niveles: {FFFFFF}0=Jugador, 1=Ayudante, 2=Moderador, 3=Admin, 4=Dueño");
+        SendClientMessage(playerid, COLOR_INFO, "{33CCFF}Ejemplo: {FFFFFF}/setadmin 0 2 (otorgar moderador)");
+        return 1;
+    }
+    
+    // Verificar si el jugador objetivo está conectado
+    if(!IsPlayerConnected(targetid))
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}Jugador no conectado.");
+    
+    // Verificar que el jugador objetivo esté logueado
+    if(!UserData[targetid][uLogged])
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}El jugador no está logueado.");
+    
+    // Verificar que el nivel de admin sea válido (0-4)
+    if(adminlevel < 0 || adminlevel > 4)
+    {
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}Nivel de admin inválido. Rango permitido: 0-4");
+        return 1;
+    }
+    
+    // No permitir que se den el mismo rango a sí mismos si ya lo tienen
+    if(targetid == playerid && adminlevel == UserData[playerid][uAdminLevel])
+    {
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}Ya tienes ese nivel de administrador.");
+        return 1;
+    }
+    
+    // Guardar el nivel anterior
+    new oldLevel = UserData[targetid][uAdminLevel];
+    
+    // Cambiar el nivel de admin
+    UserData[targetid][uAdminLevel] = adminlevel;
+    
+    // Guardar en base de datos
+    new query[256];
+    mysql_format(g_MySQL, query, sizeof(query),
+        "UPDATE users SET admin_level = %d WHERE id = %d",
+        adminlevel, UserData[targetid][uID]);
+    mysql_tquery(g_MySQL, query);
+    
+    // Nombres de los niveles para los mensajes
+    new oldLevelName[32], newLevelName[32];
+    switch(oldLevel)
+    {
+        case 0: oldLevelName = "Jugador";
+        case 1: oldLevelName = "Ayudante";
+        case 2: oldLevelName = "Moderador";
+        case 3: oldLevelName = "Administrador";
+        case 4: oldLevelName = "Dueño";
+        default: oldLevelName = "Desconocido";
+    }
+    
+    switch(adminlevel)
+    {
+        case 0: newLevelName = "Jugador";
+        case 1: newLevelName = "Ayudante";
+        case 2: newLevelName = "Moderador";
+        case 3: newLevelName = "Administrador";
+        case 4: newLevelName = "Dueño";
+        default: newLevelName = "Desconocido";
+    }
+    
+    // Mensajes de confirmación
+    new string[200];
+    if(targetid == playerid)
+    {
+        format(string, sizeof(string), 
+            "{00FF00}Has cambiado tu nivel de admin de {FFFFFF}%s (%d) {00FF00}a {FFFFFF}%s (%d)", 
+            oldLevelName, oldLevel, newLevelName, adminlevel);
+        SendClientMessage(playerid, COLOR_SUCCESS, string);
+    }
+    else
+    {
+        format(string, sizeof(string), 
+            "{00FF00}Has cambiado el nivel de admin de {FFFFFF}%s {00FF00}de {FFFFFF}%s (%d) {00FF00}a {FFFFFF}%s (%d)", 
+            UserData[targetid][uNickname], oldLevelName, oldLevel, newLevelName, adminlevel);
+        SendClientMessage(playerid, COLOR_SUCCESS, string);
+        
+        format(string, sizeof(string), 
+            "{FFD700}Admin {FFFFFF}%s {FFD700}ha cambiado tu nivel de admin de {FFFFFF}%s (%d) {FFD700}a {FFFFFF}%s (%d)", 
+            UserData[playerid][uNickname], oldLevelName, oldLevel, newLevelName, adminlevel);
+        SendClientMessage(targetid, COLOR_ADMIN_MSG, string);
+        
+        // Notificar a todos los admins
+        format(string, sizeof(string), 
+            "{FFD700}%s ha cambiado el nivel de admin de %s a %s (%d)",
+            UserData[playerid][uNickname], UserData[targetid][uNickname], newLevelName, adminlevel);
+        SendAdminMessage(COLOR_ADMIN_MSG, string);
+    }
+    
+    // Log en consola
+    printf("[Admin] %s cambio el nivel de admin de %s de %d (%s) a %d (%s)", 
+        UserData[playerid][uNickname], UserData[targetid][uNickname], 
+        oldLevel, oldLevelName, adminlevel, newLevelName);
+    
+    return 1;
+}
+
 // Variables temporales para gestión de vehículos
 new AdminVehicleTarget[MAX_PLAYERS] = {INVALID_PLAYER_ID, ...};
 new AdminVehicleSelected[MAX_PLAYERS] = {-1, ...};
+
+// Variables para sistema de administración
+new AdminPanelTarget[MAX_PLAYERS] = {INVALID_PLAYER_ID, ...};
+new AdminDarTarget[MAX_PLAYERS] = {INVALID_PLAYER_ID, ...};
+new bool:PlayerInFreecam[MAX_PLAYERS] = {false, ...};
+new PlayerWarnings[MAX_PLAYERS] = {0, ...}; // Sistema de advertencias
+new bool:PlayerFrozen[MAX_PLAYERS] = {false, ...}; // Estado de freeze
+
+// Comando: /panel - Panel de gestión de jugadores
+CMD:panel(playerid, params[])
+{
+    if(!IsModerator(playerid))
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}Necesitas ser Moderador nivel 2.");
+    
+    new targetid;
+    if(sscanf(params, "u", targetid))
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Uso: {FFFFFF}/panel [playerid]");
+    
+    if(!IsPlayerConnected(targetid))
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}Jugador no conectado.");
+    
+    if(!CharacterData[targetid][cID])
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}El jugador no tiene personaje seleccionado.");
+    
+    // Guardar target
+    AdminPanelTarget[playerid] = targetid;
+    
+    // Mostrar panel
+    new dialog[512], title[128];
+    format(title, sizeof(title), "Panel de Administración - %s", CharacterData[targetid][cName]);
+    format(dialog, sizeof(dialog),
+        "Ir\n\
+        Traer\n\
+        Mutear\n\
+        Freeze\n\
+        Advertencia\n\
+        Encarcelar\n\
+        Expulsar\n\
+        Banear\n\
+        Espectar\n\
+        Estadísticas\n\
+        Inventario");
+    
+    ShowPlayerDialog(playerid, DIALOG_ADMIN_PANEL, DIALOG_STYLE_LIST, title, dialog, "Seleccionar", "Cancelar");
+    return 1;
+}
 
 // Comando: /vehiculos - Ver vehículos de un jugador
 CMD:vehiculos(playerid, params[])
@@ -338,7 +500,11 @@ public OnAdminSelectVehicle(playerid)
     new dialog[256], title[128];
     format(title, sizeof(title), "%s - Placa: %s", VehicleModelNames[model - 400], plate);
     format(dialog, sizeof(dialog), 
-        "Reparar vehiculo\nTeleportarse al vehiculo\nEliminar vehiculo");
+        "Reparar vehiculo\n\
+        Teleportarse al vehiculo\n\
+        Respawn vehiculo\n\
+        Rellenar gasolina\n\
+        Eliminar vehiculo");
     
     ShowPlayerDialog(playerid, DIALOG_ADMIN_VEHICLE_ACTIONS, DIALOG_STYLE_LIST, title, dialog, "Seleccionar", "Cancelar");
     return 1;
@@ -404,7 +570,38 @@ stock OnDialogAdminVehicleActions(playerid, response, listitem)
                 SendClientMessage(playerid, COLOR_ERROR, "{FF0000}El vehiculo no esta spawneado actualmente.");
             }
         }
-        case 2: // Eliminar
+        case 2: // Respawn
+        {
+            new bool:found = false;
+            for(new v = 1; v < MAX_VEHICLES_ENGINE; v++)
+            {
+                if(GetVehicleDBID(v) == vehicleDBID)
+                {
+                    SetVehicleToRespawn(v);
+                    found = true;
+                    
+                    new string[128];
+                    format(string, sizeof(string), "{00FF00}Vehiculo ID %d respawneado correctamente.", vehicleDBID);
+                    SendClientMessage(playerid, COLOR_SUCCESS, string);
+                    
+                    printf("[Admin] %s respawneo el vehiculo DB ID %d", CharacterData[playerid][cName], vehicleDBID);
+                    break;
+                }
+            }
+            
+            if(!found)
+            {
+                SendClientMessage(playerid, COLOR_ERROR, "{FF0000}El vehiculo no esta spawneado actualmente.");
+            }
+        }
+        case 3: // Rellenar gasolina
+        {
+            // TODO: Implementar cuando el sistema de gasolina esté listo
+            SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Sistema de gasolina en desarrollo.");
+            printf("[Admin] %s intento rellenar gasolina del vehiculo DB ID %d (sistema no disponible)", 
+                CharacterData[playerid][cName], vehicleDBID);
+        }
+        case 4: // Eliminar
         {
             new dialog[256];
             format(dialog, sizeof(dialog),
@@ -810,6 +1007,79 @@ public OnCheckVirtualWorldUsage(playerid, virtualworld)
         
         format(string, sizeof(string), "  {AAAAAA}#%d: {FFFFFF}%s {AAAAAA}(%s) - Int: %d", propid, propname, typename, interior);
         SendClientMessage(playerid, COLOR_WHITE, string);
+    }
+    
+    return 1;
+}
+
+// ==================== NUEVOS COMANDOS DE ADMINISTRACIÓN ====================
+
+// Comando: /dar - Dar items/beneficios a un jugador
+CMD:dar(playerid, params[])
+{
+    if(!IsModerator(playerid))
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}Necesitas ser Moderador nivel 2.");
+    
+    new targetid;
+    if(sscanf(params, "u", targetid))
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Uso: {FFFFFF}/dar [playerid]");
+    
+    if(!IsPlayerConnected(targetid))
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}Jugador no conectado.");
+    
+    if(!CharacterData[targetid][cID])
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}El jugador no tiene personaje seleccionado.");
+    
+    // Guardar target
+    AdminDarTarget[playerid] = targetid;
+    
+    // Mostrar menú
+    new dialog[512], title[128];
+    format(title, sizeof(title), "Dar Items - %s", CharacterData[targetid][cName]);
+    format(dialog, sizeof(dialog),
+        "Vida\n\
+        Armadura\n\
+        Dinero\n\
+        Jetpack\n\
+        Skins\n\
+        Autos\n\
+        Necesidades");
+    
+    ShowPlayerDialog(playerid, DIALOG_ADMIN_DAR, DIALOG_STYLE_LIST, title, dialog, "Seleccionar", "Cancelar");
+    return 1;
+}
+
+// Comando: /afk - Activar/desactivar modo AFK (cámara libre)
+CMD:afk(playerid, params[])
+{
+    if(!IsModerator(playerid))
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}Necesitas ser Moderador nivel 2.");
+    
+    if(!CharacterData[playerid][cID])
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}No has seleccionado un personaje.");
+    
+    if(!PlayerInFreecam[playerid])
+    {
+        // Activar AFK
+        TogglePlayerSpectating(playerid, true);
+        PlayerInFreecam[playerid] = true;
+        
+        SendClientMessage(playerid, COLOR_SUCCESS, "{00FF00}Modo AFK activado.");
+        SendClientMessage(playerid, COLOR_INFO, "{33CCFF}Usa {FFFFFF}/afk {33CCFF}nuevamente para desactivar.");
+        
+        printf("[Admin] %s activo modo AFK", CharacterData[playerid][cName]);
+    }
+    else
+    {
+        // Desactivar AFK
+        TogglePlayerSpectating(playerid, false);
+        PlayerInFreecam[playerid] = false;
+        
+        SpawnPlayer(playerid);
+        
+        SendClientMessage(playerid, COLOR_SUCCESS, "{00FF00}Modo AFK desactivado.");
+        
+        printf("[Admin] %s desactivo modo AFK", CharacterData[playerid][cName]);
     }
     
     return 1;
