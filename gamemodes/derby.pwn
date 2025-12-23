@@ -28,6 +28,23 @@
 #define COLOR_SUCCESS   (0x00FF00FF)
 #define COLOR_ERROR     (0xFF0000FF)
 #define COLOR_ADMIN     (0xFF6347FF)
+#define COLOR_DARK_GREEN (0x006400FF)
+#define COLOR_MEDIUM_GREEN 0x228B22FF // Verde intermedio
+
+// Colores para chat de rol
+#define COLOR_ME        (0xC2A2DAFF)  // Morado suave para /me
+#define COLOR_DO        (0xFFFFE0FF)  // Amarillo pálido para /do
+#define COLOR_OOC       (0x999999FF)  // Gris para /b (Out of character)
+#define COLOR_PM        (0xFFD700FF)  // Dorado para /pm
+#define COLOR_FACTION   (0x00FFFFFF)  // Cian para /f
+
+// Distancias de chat
+#define CHAT_PROXIMITY_DISTANCE     20.0
+#define SHOUT_DISTANCE              40.0
+#define WHISPER_DISTANCE            5.0
+
+// Macro para verificar strings vacíos
+#define isnull(%1) ((!(%1[0])) || (((%1[0]) == '\1') && (!(%1[1]))))
 
 // Dialogs
 #define DIALOG_AUTO             1000
@@ -141,7 +158,7 @@ public CheckVehicleHealth()
     new Float:health;
     for(new i = 1; i < MAX_VEHICLES; i++)
     {
-        if(GetVehicleModel(i) == 0) continue; // Vehículo no válido
+        if(GetVehicleModel(i) == 0) continue; // Vehiculo no valido
         
         GetVehicleHealth(i, health);
         
@@ -223,6 +240,15 @@ public OnGameModeInit()
     // Iniciar timer de proteccion de vehiculos
     SetTimer("CheckVehicleHealth", 1000, true);
     
+    // Inicializar sistema de dudas
+    for(new i = 0; i < MAX_DUDAS; i++)
+    {
+        DudaData[i][dudaActiva] = 0;
+        DudaData[i][dudaPlayerID] = -1;
+        DudaData[i][dudaAdminID] = -1;
+        DudaData[i][dudaTimer] = 0;
+    }
+    
     return true;
 }
 
@@ -252,6 +278,11 @@ public OnPlayerConnect(playerid)
     
     PlayerInBusiness[playerid] = -1;
     
+    // Resetear sistema de dudas
+    PlayerDudaID[playerid] = -1;
+    AdminDudaID[playerid] = -1;
+    PlayerInDudaChat[playerid] = false;
+    
     GetPlayerName(playerid, UserData[playerid][uNickname], MAX_PLAYER_NAME);
     
     // Verificar si el usuario está registrado
@@ -274,6 +305,49 @@ public OnPlayerDisconnect(playerid, reason)
     
     // Resetear estado de tienda
     PlayerInBusiness[playerid] = -1;
+    
+    // Limpiar dudas activas
+    if(PlayerDudaID[playerid] != -1)
+    {
+        new dudaid = PlayerDudaID[playerid];
+        if(DudaData[dudaid][dudaActiva])
+        {
+            // Notificar al admin si hay uno asignado
+            new adminid = DudaData[dudaid][dudaAdminID];
+            if(adminid != -1 && IsPlayerConnected(adminid))
+            {
+                SendClientMessage(adminid, COLOR_ADMIN_MSG, "{FF6347}[STAFF] {FFFFFF}El jugador se ha desconectado. La sesión de ayuda ha finalizado.");
+                AdminDudaID[adminid] = -1;
+            }
+            
+            // Limpiar duda
+            DudaData[dudaid][dudaActiva] = 0;
+            if(DudaData[dudaid][dudaTimer] != 0)
+                KillTimer(DudaData[dudaid][dudaTimer]);
+        }
+        PlayerDudaID[playerid] = -1;
+    }
+    
+    // Si el admin se desconecta
+    if(AdminDudaID[playerid] != -1)
+    {
+        new dudaid = AdminDudaID[playerid];
+        if(DudaData[dudaid][dudaActiva])
+        {
+            new targetid = DudaData[dudaid][dudaPlayerID];
+            if(IsPlayerConnected(targetid))
+            {
+                SendClientMessage(targetid, COLOR_INFO, "{FF6347}[STAFF] {FFFFFF}El administrador se ha desconectado. Tu duda ha sido cerrada.");
+                PlayerDudaID[targetid] = -1;
+            }
+            
+            // Limpiar duda
+            DudaData[dudaid][dudaActiva] = 0;
+            if(DudaData[dudaid][dudaTimer] != 0)
+                KillTimer(DudaData[dudaid][dudaTimer]);
+        }
+        AdminDudaID[playerid] = -1;
+    }
     
     new string[128];
     
@@ -335,7 +409,7 @@ public OnPlayerSpawn(playerid)
     LoadCharacterVehicles(playerid);
     
     SendClientMessage(playerid, COLOR_GREEN, "Has spawneado correctamente!");
-    SendClientMessage(playerid, COLOR_WHITE, "{AAAAAA}» {FFFF00}Y{AAAAAA}=Inventario | {FFFF00}N{AAAAAA}=Motor | {FFFF00}H{AAAAAA}=Entrar/Salir | {FFFF00}/ayuda{AAAAAA} para más.");
+    SendClientMessage(playerid, COLOR_WHITE, "{AAAAAA}» {FFFF00}Y{AAAAAA}=Inventario | {FFFF00}N{AAAAAA}=Motor | {FFFF00}H{AAAAAA}=Entrar/Salir | {FFFF00}/ayuda{AAAAAA} para mas.");
     return true;
 }
 
@@ -482,6 +556,21 @@ public OnPlayerCommandText(playerid, cmdtext[])
     new cmd[128], idx;
     cmd = strtok(cmdtext, idx);
     
+    // Comandos de chat roleplay
+    if(strcmp(cmd, "/me", true) == 0) return cmd_me(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/do", true) == 0) return cmd_do(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/intentar", true) == 0) return cmd_intentar(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/b", true) == 0) return cmd_b(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/g", true) == 0) return cmd_g(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/s", true) == 0) return cmd_s(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/pm", true) == 0) return cmd_pm(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/f", true) == 0) return cmd_f(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/duda", true) == 0) return cmd_duda(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/ayuda", true) == 0) return cmd_ayuda(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/verdudas", true) == 0) return cmd_verdudas(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/cerrarduda", true) == 0) return cmd_cerrarduda(playerid, cmdtext[idx]);
+    
+    // Comandos de propiedades y sistema
     if(strcmp(cmd, "/createhouse", true) == 0) return cmd_createhouse(playerid, cmdtext[idx]);
     if(strcmp(cmd, "/enter", true) == 0) return cmd_enter(playerid, cmdtext[idx]);
     if(strcmp(cmd, "/exitproperty", true) == 0) return cmd_exitproperty(playerid, cmdtext[idx]);
@@ -548,8 +637,121 @@ stock RemoveOriginalSAMPPickups()
     return 1;
 }
 
+// Sistema de chat de proximidad
+public OnPlayerText(playerid, text[])
+{
+    if(!CharacterData[playerid][cSelected])
+    {
+        SendClientMessage(playerid, COLOR_RED, "Debes seleccionar un personaje primero!");
+        return 0;
+    }
+    
+    // Sistema de dudas - Bloquear todo el chat si está en sesión de duda
+    if(PlayerInDudaChat[playerid])
+    {
+        // Si el jugador tiene una duda activa con un admin asignado
+        if(PlayerDudaID[playerid] != -1)
+        {
+            new dudaid = PlayerDudaID[playerid];
+            if(DudaData[dudaid][dudaActiva] && DudaData[dudaid][dudaAdminID] != -1)
+            {
+                new adminid = DudaData[dudaid][dudaAdminID];
+                
+                if(IsPlayerConnected(adminid))
+                {
+                    // Actualizar tiempo
+                    DudaData[dudaid][dudaUltimaInteraccion] = gettime();
+                    
+                    // Enviar mensaje al admin
+                    new string[256];
+                    format(string, sizeof(string), "{33CCFF}[%s - DUDA] {FFFFFF}%s", CharacterData[playerid][cName], text);
+                    SendClientMessage(adminid, COLOR_INFO, string);
+                    
+                    // Confirmar al jugador
+                    format(string, sizeof(string), "{FF6347}[A STAFF] {FFFFFF}%s", text);
+                    SendClientMessage(playerid, COLOR_ADMIN_MSG, string);
+                    
+                    return 0; // Bloquear el mensaje normal
+                }
+            }
+        }
+        
+        // Si el admin tiene una duda activa
+        if(IsHelper(playerid) && AdminDudaID[playerid] != -1)
+        {
+            new dudaid = AdminDudaID[playerid];
+            new targetid = DudaData[dudaid][dudaPlayerID];
+            
+            if(IsPlayerConnected(targetid))
+            {
+                // Actualizar tiempo
+                DudaData[dudaid][dudaUltimaInteraccion] = gettime();
+                
+                // Enviar mensaje al jugador
+                new string[256];
+                format(string, sizeof(string), "{FF6347}[STAFF %s] {FFFFFF}%s", CharacterData[playerid][cName], text);
+                SendClientMessage(targetid, COLOR_ADMIN_MSG, string);
+                
+                // Confirmar al admin
+                format(string, sizeof(string), "{33CCFF}[A %s] {FFFFFF}%s", CharacterData[targetid][cName], text);
+                SendClientMessage(playerid, COLOR_INFO, string);
+                
+                return 0; // Bloquear el mensaje normal
+            }
+        }
+        
+        // Si llegamos aquí, no se puede enviar el mensaje
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}Estás en una sesión de duda. Espera a que se cierre.");
+        return 0;
+    }
+    
+    // Chat de proximidad normal
+    new Float:playerX, Float:playerY, Float:playerZ;
+    GetPlayerPos(playerid, playerX, playerY, playerZ);
+    
+    new string[144];
+    format(string, sizeof(string), "%s dice: %s", CharacterData[playerid][cName], text);
+    
+    // Enviar mensaje a todos los jugadores cercanos con gradiente de color según distancia
+    for(new i = 0; i < MAX_PLAYERS; i++)
+    {
+        if(!IsPlayerConnected(i)) continue;
+        if(!CharacterData[i][cSelected]) continue;
+        if(GetPlayerVirtualWorld(i) != GetPlayerVirtualWorld(playerid)) continue;
+        if(GetPlayerInterior(i) != GetPlayerInterior(playerid)) continue;
+        
+        new Float:distance = GetPlayerDistanceFromPoint(i, playerX, playerY, playerZ);
+        
+        if(distance <= CHAT_PROXIMITY_DISTANCE)
+        {
+            // Calcular el color según la distancia (más cerca = más claro, más lejos = más oscuro)
+            new color = GetProximityColor(distance, CHAT_PROXIMITY_DISTANCE);
+            SendClientMessage(i, color, string);
+        }
+    }
+    
+    return 0; // Bloquear el chat por defecto
+}
+
+// Función para calcular el color según distancia (gradiente de blanco a gris oscuro)
+stock GetProximityColor(Float:distance, Float:maxDistance)
+{
+    new Float:percentage = distance / maxDistance;
+    if(percentage > 1.0) percentage = 1.0;
+    
+    // Interpolación de color: de blanco (255, 255, 255) a gris oscuro (80, 80, 80)
+    new colorValue = 255 - floatround(percentage * 175.0); // 175 = 255 - 80
+    
+    // Construir color en formato RGBA
+    return (colorValue << 24) | (colorValue << 16) | (colorValue << 8) | 0xFF;
+}
+
 public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 {
+    // Dialog del sistema de dudas
+    if(dialogid == DIALOG_DUDA_LIST)
+        return OnDialogDudaList(playerid, response, listitem);
+    
     // Dialogs del sistema de propiedades
     if(dialogid >= 2000 && dialogid < 3000)
         return OnPropertyDialogResponse(playerid, dialogid, response, listitem, inputtext);
@@ -641,7 +843,7 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
             
             if(strlen(inputtext) < 6 || strlen(inputtext) > 32)
             {
-                SendClientMessage(playerid, COLOR_RED, "La contraseña debe tener entre 6 y 32 caracteres.");
+                SendClientMessage(playerid, COLOR_RED, "La contrasena debe tener entre 6 y 32 caracteres.");
                 ShowRegisterDialog(playerid);
                 return true;
             }
@@ -675,7 +877,7 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
             
             if(strcmp(hash, UserData[playerid][uPassword], false) != 0)
             {
-                SendClientMessage(playerid, COLOR_RED, "Contraseña incorrecta!");
+                SendClientMessage(playerid, COLOR_RED, "Contrasena incorrecta!");
                 ShowLoginDialog(playerid);
                 return true;
             }
@@ -726,7 +928,7 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
             // Validar nombre RP
             if(!ValidateRPName(inputtext))
             {
-                SendClientMessage(playerid, COLOR_RED, "Nombre inválido! Debe ser Nombre_Apellido con formato RP");
+                SendClientMessage(playerid, COLOR_RED, "Nombre invalido! Debe ser Nombre_Apellido con formato RP");
                 SendClientMessage(playerid, COLOR_YELLOW, "Ejemplos: Pablo Prieto, Maria Garcia, John Smith");
                 ShowCharacterCreate(playerid);
                 return true;
@@ -786,7 +988,7 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
                     
                     if(CharacterData[playerid][cGender] == 0)
                     {
-                        SendClientMessage(playerid, COLOR_ERROR, "Debes configurar el género primero.");
+                        SendClientMessage(playerid, COLOR_ERROR, "Debes configurar el genero primero.");
                         ShowCharacterStatsDialog(playerid);
                         return true;
                     }
@@ -827,11 +1029,11 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
             new age = strval(inputtext);
             if(age < 18 || age > 80)
             {
-                SendClientMessage(playerid, COLOR_ERROR, "La edad debe estar entre 18 y 80 a\xF1os.");
+                SendClientMessage(playerid, COLOR_ERROR, "La edad debe estar entre 18 y 80 anos.");
                 ShowPlayerDialog(playerid, DIALOG_EDIT_AGE, DIALOG_STYLE_INPUT,
                     "Configurar Personaje - Edad",
                     "{FFFFFF}Ingresa la edad de tu personaje:\n\n\
-                    {AAAAAA}Rango permitido: 18 a 80 a\xF1os\n\
+                    {AAAAAA}Rango permitido: 18 a 80 anos\n\
                     {FF0000}Error: Edad invalida",
                     "Confirmar", "Atras");
                 return true;
@@ -1080,7 +1282,7 @@ MySQL_Connect()
     }
     
     print("====================================");
-    print("[MySQL] ¡Conexión exitosa a MySQL 5.7!");
+    print("[MySQL] Conexion exitosa a MySQL 5.7!");
     printf("[MySQL] Base de datos: %s", MYSQL_DATABASE);
     print("====================================");
     
@@ -1143,5 +1345,313 @@ MySQL_CreateTables()
     print("[MySQL] Tablas verificadas/creadas correctamente.");
 }
 
+// ============================================================================
+// COMANDOS DE CHAT ROLEPLAY
+// ============================================================================
 
+// /me - Acción en primera persona
+CMD:me(playerid, params[])
+{
+    if(!CharacterData[playerid][cSelected])
+        return SendClientMessage(playerid, COLOR_RED, "Debes seleccionar un personaje primero!");
+    
+    if(isnull(params))
+        return SendClientMessage(playerid, COLOR_GRAY, "Uso: /me [accion]");
+    
+    new Float:playerX, Float:playerY, Float:playerZ;
+    GetPlayerPos(playerid, playerX, playerY, playerZ);
+    
+    new string[144];
+    format(string, sizeof(string), "* %s%s.", CharacterData[playerid][cName], params);
+    
+    // Enviar a jugadores cercanos con color morado
+    for(new i = 0; i < MAX_PLAYERS; i++)
+    {
+        if(!IsPlayerConnected(i)) continue;
+        if(!CharacterData[i][cSelected]) continue;
+        if(GetPlayerVirtualWorld(i) != GetPlayerVirtualWorld(playerid)) continue;
+        if(GetPlayerInterior(i) != GetPlayerInterior(playerid)) continue;
+        
+        new Float:distance = GetPlayerDistanceFromPoint(i, playerX, playerY, playerZ);
+        
+        if(distance <= CHAT_PROXIMITY_DISTANCE)
+        {
+            SendClientMessage(i, COLOR_ME, string);
+        }
+    }
+    
+    return 1;
+}
 
+// /do - Descripción del entorno (narrador)
+CMD:do(playerid, params[])
+{
+    if(!CharacterData[playerid][cSelected])
+        return SendClientMessage(playerid, COLOR_RED, "Debes seleccionar un personaje primero!");
+    
+    if(isnull(params))
+        return SendClientMessage(playerid, COLOR_GRAY, "Uso: /do [descripcion]");
+    
+    new Float:playerX, Float:playerY, Float:playerZ;
+    GetPlayerPos(playerid, playerX, playerY, playerZ);
+    
+    new string[144];
+    format(string, sizeof(string), "[%s]%s", CharacterData[playerid][cName], params);
+    
+    // Enviar a jugadores cercanos con color verde intermedio
+    for(new i = 0; i < MAX_PLAYERS; i++)
+    {
+        if(!IsPlayerConnected(i)) continue;
+        if(!CharacterData[i][cSelected]) continue;
+        if(GetPlayerVirtualWorld(i) != GetPlayerVirtualWorld(playerid)) continue;
+        if(GetPlayerInterior(i) != GetPlayerInterior(playerid)) continue;
+        
+        new Float:distance = GetPlayerDistanceFromPoint(i, playerX, playerY, playerZ);
+        
+        if(distance <= CHAT_PROXIMITY_DISTANCE)
+        {
+            SendClientMessage(i, COLOR_MEDIUM_GREEN, string);
+        }
+    }
+    
+    return 1;
+}
+
+// /intentar - Acción con resultado aleatorio
+CMD:intentar(playerid, params[])
+{
+    if(!CharacterData[playerid][cSelected])
+        return SendClientMessage(playerid, COLOR_RED, "Debes seleccionar un personaje primero!");
+    
+    if(isnull(params))
+        return SendClientMessage(playerid, COLOR_GRAY, "Uso: /intentar [accion]");
+    
+    new Float:playerX, Float:playerY, Float:playerZ;
+    GetPlayerPos(playerid, playerX, playerY, playerZ);
+    
+    // Calcular resultado aleatorio (50% de éxito)
+    new resultado = random(2);
+    new string[144];
+    
+    if(resultado == 1) // Éxito
+    {
+        format(string, sizeof(string), "%s intento%s y logro hacerlo.", CharacterData[playerid][cName], params);
+    }
+    else // Fracaso
+    {
+        format(string, sizeof(string), "%s intento%s y no logro hacerlo.", CharacterData[playerid][cName], params);
+    }
+    
+    // Enviar a jugadores cercanos
+    for(new i = 0; i < MAX_PLAYERS; i++)
+    {
+        if(!IsPlayerConnected(i)) continue;
+        if(!CharacterData[i][cSelected]) continue;
+        if(GetPlayerVirtualWorld(i) != GetPlayerVirtualWorld(playerid)) continue;
+        if(GetPlayerInterior(i) != GetPlayerInterior(playerid)) continue;
+        
+        new Float:distance = GetPlayerDistanceFromPoint(i, playerX, playerY, playerZ);
+        
+        if(distance <= CHAT_PROXIMITY_DISTANCE)
+        {
+            // Enviar en verde (éxito) o rojo (fracaso)
+            if(resultado == 1)
+                SendClientMessage(i, COLOR_GREEN, string);
+            else
+                SendClientMessage(i, COLOR_RED, string);
+        }
+    }
+    
+    return 1;
+}
+
+// /b - Out Of Character
+CMD:b(playerid, params[])
+{
+    if(!CharacterData[playerid][cSelected])
+        return SendClientMessage(playerid, COLOR_RED, "Debes seleccionar un personaje primero!");
+    
+    if(isnull(params))
+        return SendClientMessage(playerid, COLOR_GRAY, "Uso: /b [mensaje OOC]");
+    
+    new Float:playerX, Float:playerY, Float:playerZ;
+    GetPlayerPos(playerid, playerX, playerY, playerZ);
+    
+    new string[144];
+    format(string, sizeof(string), "%s: ((%s ))", CharacterData[playerid][cName], params);
+    
+    // Enviar a jugadores cercanos en color gris
+    for(new i = 0; i < MAX_PLAYERS; i++)
+    {
+        if(!IsPlayerConnected(i)) continue;
+        if(!CharacterData[i][cSelected]) continue;
+        if(GetPlayerVirtualWorld(i) != GetPlayerVirtualWorld(playerid)) continue;
+        if(GetPlayerInterior(i) != GetPlayerInterior(playerid)) continue;
+        
+        new Float:distance = GetPlayerDistanceFromPoint(i, playerX, playerY, playerZ);
+        
+        if(distance <= CHAT_PROXIMITY_DISTANCE)
+        {
+            SendClientMessage(i, COLOR_OOC, string);
+        }
+    }
+    
+    return 1;
+}
+
+// /g - Gritar (mayor alcance)
+CMD:g(playerid, params[])
+{
+    if(!CharacterData[playerid][cSelected])
+        return SendClientMessage(playerid, COLOR_RED, "Debes seleccionar un personaje primero!");
+    
+    if(isnull(params))
+        return SendClientMessage(playerid, COLOR_GRAY, "Uso: /g [mensaje]");
+    
+    new Float:playerX, Float:playerY, Float:playerZ;
+    GetPlayerPos(playerid, playerX, playerY, playerZ);
+    
+    // Convertir mensaje a mayúsculas
+    new upperText[128];
+    format(upperText, sizeof(upperText), "%s", params);
+    
+    for(new i = 0; i < strlen(upperText); i++)
+    {
+        if(upperText[i] >= 'a' && upperText[i] <= 'z')
+            upperText[i] -= 32;
+    }
+    
+    new string[144];
+    format(string, sizeof(string), "%s grita:%s", CharacterData[playerid][cName], upperText);
+    
+    // Enviar a jugadores cercanos con mayor alcance (40 metros)
+    for(new i = 0; i < MAX_PLAYERS; i++)
+    {
+        if(!IsPlayerConnected(i)) continue;
+        if(!CharacterData[i][cSelected]) continue;
+        if(GetPlayerVirtualWorld(i) != GetPlayerVirtualWorld(playerid)) continue;
+        if(GetPlayerInterior(i) != GetPlayerInterior(playerid)) continue;
+        
+        new Float:distance = GetPlayerDistanceFromPoint(i, playerX, playerY, playerZ);
+        
+        if(distance <= SHOUT_DISTANCE)
+        {
+            // Gradiente de color según distancia
+            new color = GetProximityColor(distance, SHOUT_DISTANCE);
+            SendClientMessage(i, color, string);
+        }
+    }
+    
+    return 1;
+}
+
+// /s - Susurrar (menor alcance)
+CMD:s(playerid, params[])
+{
+    if(!CharacterData[playerid][cSelected])
+        return SendClientMessage(playerid, COLOR_RED, "Debes seleccionar un personaje primero!");
+    
+    if(isnull(params))
+        return SendClientMessage(playerid, COLOR_GRAY, "Uso: /s [mensaje]");
+    
+    new Float:playerX, Float:playerY, Float:playerZ;
+    GetPlayerPos(playerid, playerX, playerY, playerZ);
+    
+    new string[144];
+    format(string, sizeof(string), "%s susurra:%s", CharacterData[playerid][cName], params);
+    
+    // Enviar a jugadores muy cercanos (5 metros)
+    for(new i = 0; i < MAX_PLAYERS; i++)
+    {
+        if(!IsPlayerConnected(i)) continue;
+        if(!CharacterData[i][cSelected]) continue;
+        if(GetPlayerVirtualWorld(i) != GetPlayerVirtualWorld(playerid)) continue;
+        if(GetPlayerInterior(i) != GetPlayerInterior(playerid)) continue;
+        
+        new Float:distance = GetPlayerDistanceFromPoint(i, playerX, playerY, playerZ);
+        
+        if(distance <= WHISPER_DISTANCE)
+        {
+            // Gradiente de color según distancia
+            new color = GetProximityColor(distance, WHISPER_DISTANCE);
+            SendClientMessage(i, color, string);
+        }
+    }
+    
+    return 1;
+}
+
+// /pm - Mensaje privado (solo administradores)
+CMD:pm(playerid, params[])
+{
+    if(!CharacterData[playerid][cSelected])
+        return SendClientMessage(playerid, COLOR_RED, "Debes seleccionar un personaje primero!");
+    
+    // Verificar que sea administrador
+    if(UserData[playerid][uAdminLevel] < 1)
+        return SendClientMessage(playerid, COLOR_RED, "Este comando es solo para administradores. Usa /duda para contactar al staff.");
+    
+    new targetid, mensaje[128];
+    if(sscanf(params, "us[128]", targetid, mensaje))
+        return SendClientMessage(playerid, COLOR_GRAY, "Uso: /pm [ID del jugador] [mensaje]");
+    
+    if(!IsPlayerConnected(targetid))
+        return SendClientMessage(playerid, COLOR_RED, "El jugador no está conectado.");
+    
+    if(!CharacterData[targetid][cSelected])
+        return SendClientMessage(playerid, COLOR_RED, "Ese jugador no ha seleccionado un personaje.");
+    
+    if(targetid == playerid)
+        return SendClientMessage(playerid, COLOR_RED, "No puedes enviarte un mensaje privado a ti mismo.");
+    
+    // Mensaje al emisor
+    new string1[144];
+    format(string1, sizeof(string1), "[PM Admin a %s]: %s", CharacterData[targetid][cName], mensaje);
+    SendClientMessage(playerid, COLOR_PM, string1);
+    
+    // Mensaje al receptor
+    new string2[144];
+    format(string2, sizeof(string2), "[PM de Admin %s]: %s", CharacterData[playerid][cName], mensaje);
+    SendClientMessage(targetid, COLOR_PM, string2);
+    
+    return 1;
+}
+
+// /f - Chat de facción (pendiente de implementar sistema de facciones)
+CMD:f(playerid, params[])
+{
+    if(!CharacterData[playerid][cSelected])
+        return SendClientMessage(playerid, COLOR_RED, "Debes seleccionar un personaje primero!");
+    
+    SendClientMessage(playerid, COLOR_GRAY, "El sistema de facciones aún no está implementado.");
+    
+    // TODO: Implementar cuando exista el sistema de facciones
+    /*
+   
+    if(isnull(params))
+        return SendClientMessage(playerid, COLOR_GRAY, "Uso: /f [mensaje]");
+    
+    // Verificar si el jugador está en una facción
+    if(PlayerFactionData[playerid][fID] == 0)
+        return SendClientMessage(playerid, COLOR_RED, "No perteneces a ninguna facción.");
+    
+    new string[144];
+    format(string, sizeof(string), "[F] %s %s: %s", 
+        PlayerFactionData[playerid][fRank], 
+        CharacterData[playerid][cName], 
+        params);
+    
+    // Enviar a todos los miembros de la facción
+    for(new i = 0; i < MAX_PLAYERS; i++)
+    {
+        if(!IsPlayerConnected(i)) continue;
+        if(!CharacterData[i][cSelected]) continue;
+        if(PlayerFactionData[i][fID] == PlayerFactionData[playerid][fID])
+        {
+            SendClientMessage(i, COLOR_FACTION, string);
+        }
+    }
+    */
+    
+    return 1;
+}
