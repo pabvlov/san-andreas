@@ -79,7 +79,13 @@
 #define DIALOG_ADMIN_DAR_MONEY 1029
 #define DIALOG_ADMIN_DAR_SKIN 1030
 #define DIALOG_ADMIN_DAR_VEHICLE 1031
-#define DIALOG_ADMIN_VEHICLE_RESPAWN 1032
+#define DIALOG_ADMIN_DAR_VEHICLE_SEARCH 1032
+#define DIALOG_ADMIN_DAR_VEHICLE_RESULT 1033
+#define DIALOG_ADMIN_DAR_WEAPON 1034
+#define DIALOG_ADMIN_DAR_WEAPON_QUANTITY 1035
+#define DIALOG_ADMIN_DAR_MAGAZINE 1036
+#define DIALOG_ADMIN_DAR_MAGAZINE_QUANTITY 1037
+#define DIALOG_ADMIN_VEHICLE_RESPAWN 1038
 
 #define MAX_CHARACTERS_PER_USER 3
 
@@ -192,6 +198,8 @@ public OnVehicleDamageStatusUpdate(vehicleid, playerid)
 // Includes de sistemas
 #include "../include/character_system.inc"
 #include "../include/inventory_system.inc"
+#include "../include/weapon_inventory.inc"
+#include "../include/dropped_items.inc"
 #include "../include/business_system.inc"
 #include "../include/property_system.inc"
 #include "../include/vehicle_engine_system.inc"
@@ -218,6 +226,13 @@ public OnGameModeInit()
     
     // Conectar a MySQL
     MySQL_Connect();
+    
+    // Cargar datos de armas y cargadores
+    LoadWeaponData();
+    LoadMagazineData();
+    
+    // Cargar items tirados en el suelo
+    LoadDroppedItems();
     
     // Inicializar sistemas
     InitVehiclePersistence();
@@ -300,8 +315,17 @@ public OnPlayerDisconnect(playerid, reason)
     
     if(CharacterData[playerid][cSelected])
     {
+        // Guardar arma equipada antes de guardar personaje
+        if(PlayerCurrentWeapon[playerid] != -1)
+        {
+            UnequipWeapon(playerid);
+        }
+        
         SaveCharacterData(playerid);
     }
+    
+    // Limpiar sistema de armas
+    WeaponInventory_OnDisconnect(playerid);
     
     // Resetear estado de tienda
     PlayerInBusiness[playerid] = -1;
@@ -602,6 +626,13 @@ public OnPlayerCommandText(playerid, cmdtext[])
     if(strcmp(cmd, "/agregarstock", true) == 0) return cmd_agregarstock(playerid, cmdtext[idx]);
     if(strcmp(cmd, "/comprar", true) == 0) return cmd_comprar(playerid, cmdtext[idx]);
     if(strcmp(cmd, "/interiores", true) == 0 || strcmp(cmd, "/int", true) == 0) return cmd_interiores(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/dararma", true) == 0) return cmd_dararma(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/darcargador", true) == 0) return cmd_darcargador(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/listarmas", true) == 0) return cmd_listarmas(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/listcargadores", true) == 0) return cmd_listcargadores(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/tirar", true) == 0) return cmd_tirar(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/recoger", true) == 0) return cmd_recoger(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/editattachedobject", true) == 0) return cmd_editattachedobject(playerid, cmdtext[idx]);
     
     return 0; // Comando no encontrado
 }
@@ -793,10 +824,18 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
         return OnDialogAdminDarSkin(playerid, response, inputtext);
     if(dialogid == DIALOG_ADMIN_DAR_VEHICLE)
         return OnDialogAdminDarVehicle(playerid, response, listitem);
-    if(dialogid == DIALOG_ADMIN_DAR_VEHICLE + 1)
+    if(dialogid == DIALOG_ADMIN_DAR_VEHICLE_SEARCH)
         return OnDialogAdminDarVehicleSearch(playerid, response, inputtext);
-    if(dialogid == DIALOG_ADMIN_DAR_VEHICLE + 2)
-        return OnDialogAdminDarVehicleSearchResult(playerid, response, listitem, inputtext);
+    if(dialogid == DIALOG_ADMIN_DAR_VEHICLE_RESULT)
+        return OnDialogAdminDarVehSearch(playerid, response, listitem, inputtext);
+    if(dialogid == DIALOG_ADMIN_DAR_WEAPON)
+        return OnDialogAdminDarWeapon(playerid, response, listitem);
+    if(dialogid == DIALOG_ADMIN_DAR_WEAPON_QUANTITY)
+        return OnDialogAdminDarWeaponQuantity(playerid, response, inputtext);
+    if(dialogid == DIALOG_ADMIN_DAR_MAGAZINE)
+        return OnDialogAdminDarMagazine(playerid, response, listitem);
+    if(dialogid == DIALOG_ADMIN_DAR_MAGAZINE_QUANTITY)
+        return OnDialogAdminDarMagQty(playerid, response, inputtext);
     
     // Dialog de inventario
     if(dialogid == DIALOG_INVENTORY)

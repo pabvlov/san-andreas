@@ -38,6 +38,11 @@ new bool:PlayerInDudaChat[MAX_PLAYERS] = {false, ...}; // Bloquear chat normal d
 
 // Variables AFK
 new bool:PlayerInFreecam[MAX_PLAYERS];
+// Forward declarations
+forward bool:IsHelper(playerid);
+forward bool:IsModerator(playerid);
+forward bool:IsAdministrator(playerid);
+forward bool:IsOwner(playerid);
 
 // Verificar permisos
 stock bool:IsHelper(playerid)
@@ -103,7 +108,9 @@ CMD:acmds(playerid, params[])
         strcat(string, "/createhouse, /deletehouse, /edithouse\n");
         strcat(string, "/createshop, /deleteshop, /editshop\n");
         strcat(string, "/createbusiness, /deletebusiness, /editbusiness\n");
-        strcat(string, "/setmoney, /setadmin, /giveweapon, /jetpack\n\n");
+        strcat(string, "/setmoney, /setadmin, /giveweapon, /jetpack\n");
+        strcat(string, "/darmarma [id] [arma] [balas] - Dar arma al inventario\n");
+        strcat(string, "/darcargador [id] [tipo] [cant] - Dar munición\n\n");
     }
     
     if(IsOwner(playerid))
@@ -1078,6 +1085,8 @@ CMD:dar(playerid, params[])
         Jetpack\n\
         Skins\n\
         Autos\n\
+        Armas\n\
+        Cargadores\n\
         Necesidades");
     
     ShowPlayerDialog(playerid, DIALOG_ADMIN_DAR, DIALOG_STYLE_LIST, title, dialog, "Seleccionar", "Cancelar");
