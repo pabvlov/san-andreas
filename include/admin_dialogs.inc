@@ -783,18 +783,30 @@ stock OnDialogAdminDarWeapon(playerid, response, listitem)
     
     if(listitem >= TotalWeapons) return 1;
     
-    // Guardar arma seleccionada
-    AdminSelectedWeapon[playerid] = listitem;
+    // Dar arma directamente (1 unidad)
+    new weaponIdx = listitem;
     
-    // Preguntar cantidad
-    new dialog[256];
-    format(dialog, sizeof(dialog),
-        "{FFFFFF}Has seleccionado: {FFFF00}%s\n\n\
-        {FFFFFF}Ingresa la cantidad a dar (1-100):",
-        WeaponData[listitem][wName]);
+    new weaponItemID = WeaponData[weaponIdx][wItemID];
     
-    ShowPlayerDialog(playerid, DIALOG_ADMIN_DAR_WEAPON_QUANTITY, DIALOG_STYLE_INPUT,
-        "Cantidad de Armas", dialog, "Dar", "Cancelar");
+    // Crear metadata con 0 balas
+    new metadata[64];
+    format(metadata, sizeof(metadata), "{\"ammo\":0,\"equipped\":0}");
+    
+    if(GivePlayerItem(targetid, weaponItemID, 1, metadata))
+    {
+        new string[144];
+        format(string, sizeof(string), "{00FF00}Le has dado {FFFFFF}%s {00FF00}a {FFFFFF}%s {00FF00}(0 balas guardadas).",
+            WeaponData[weaponIdx][wName], CharacterData[targetid][cName]);
+        SendClientMessage(playerid, COLOR_SUCCESS, string);
+        
+        format(string, sizeof(string), "{00FF00}Has recibido {FFFFFF}%s {00FF00}(0 balas). Necesitas cargadores para usar el arma.",
+            WeaponData[weaponIdx][wName]);
+        SendClientMessage(targetid, COLOR_SUCCESS, string);
+    }
+    else
+    {
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}El inventario del jugador está lleno.");
+    }
     
     return 1;
 }
@@ -873,21 +885,30 @@ stock OnDialogAdminDarMagazine(playerid, response, listitem)
     
     if(listitem >= TotalMagazines) return 1;
     
-    // Guardar cargador seleccionado
-    AdminSelectedMagazine[playerid] = listitem;
+    // Dar cargador directamente (1 unidad con capacidad completa)
+    new magIdx = listitem;
+    new magItemID = MagazineData[magIdx][mItemID];
+    new capacity = MagazineData[magIdx][mCapacity];
     
-    // Preguntar cantidad
-    new dialog[256];
-    format(dialog, sizeof(dialog),
-        "{FFFFFF}Has seleccionado: {FFFF00}%s\n\
-        {AAAAAA}Para arma ID: %d (%d balas)\n\n\
-        {FFFFFF}Ingresa la cantidad a dar (1-100):",
-        MagazineData[listitem][mName],
-        MagazineData[listitem][mWeaponID],
-        MagazineData[listitem][mCapacity]);
+    // Crear metadata con cantidad de balas igual a la capacidad
+    new metadata[64];
+    format(metadata, sizeof(metadata), "{\\\"bullets\\\":%d}", capacity);
     
-    ShowPlayerDialog(playerid, DIALOG_ADMIN_DAR_MAGAZINE_QUANTITY, DIALOG_STYLE_INPUT,
-        "Cantidad de Cargadores", dialog, "Dar", "Cancelar");
+    if(GivePlayerItem(targetid, magItemID, 1, metadata))
+    {
+        new string[144];
+        format(string, sizeof(string), "{00FF00}Le has dado {FFFFFF}%s {00FF00}a {FFFFFF}%s {00FF00}(%d balas).",
+            MagazineData[magIdx][mName], CharacterData[targetid][cName], capacity);
+        SendClientMessage(playerid, COLOR_SUCCESS, string);
+        
+        format(string, sizeof(string), "{00FF00}Has recibido {FFFFFF}%s {00FF00}(%d balas).",
+            MagazineData[magIdx][mName], capacity);
+        SendClientMessage(targetid, COLOR_SUCCESS, string);
+    }
+    else
+    {
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}El inventario del jugador está lleno.");
+    }
     
     return 1;
 }

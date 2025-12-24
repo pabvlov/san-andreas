@@ -50,7 +50,7 @@ stock LoadWeaponData()
 {
     new query[512];
     mysql_format(g_MySQL, query, sizeof(query), 
-        "SELECT id, name, weapon_id, weapon_ammo_capacity, weapon_object_id FROM items WHERE is_weapon = 1 ORDER BY id");
+        "SELECT id, name, weapon_id, weapon_ammo_capacity, weapon_object_id, item_size FROM items WHERE is_weapon = 1 ORDER BY id");
     
     new Cache:result = mysql_query(g_MySQL, query);
     new rows = cache_num_rows();
@@ -66,12 +66,13 @@ stock LoadWeaponData()
         cache_get_value_name_int(i, "weapon_id", WeaponData[i][wSAMPID]);
         cache_get_value_name_int(i, "weapon_ammo_capacity", WeaponData[i][wAmmoCapacity]);
         cache_get_value_name_int(i, "weapon_object_id", WeaponData[i][wHandObject]);
+        cache_get_value_name_int(i, "item_size", WeaponData[i][wItemSize]); // NUEVO: cargar tamaño desde BD
         
         WeaponData[i][wID] = i; // ID interno del array
         WeaponData[i][wSlot] = 0; // No usado
         
-        printf("[Weapon System] - Arma %d: %s (ItemID:%d, SAMP:%d, Object:%d)", 
-            i, WeaponData[i][wName], WeaponData[i][wItemID], WeaponData[i][wSAMPID], WeaponData[i][wHandObject]);
+        printf("[Weapon System] - Arma %d: %s (ItemID:%d, SAMP:%d, Size:%d)", 
+            i, WeaponData[i][wName], WeaponData[i][wItemID], WeaponData[i][wSAMPID], WeaponData[i][wItemSize]);
         
         TotalWeapons++;
     }
@@ -83,11 +84,12 @@ stock LoadWeaponData()
 stock LoadMagazineData()
 {
     new query[512];
-    // JOIN con weapons para obtener el item_id del arma (no el id de weapons)
+    // JOIN con weapons y items para obtener el item_id del arma y el item_size del cargador
     mysql_format(g_MySQL, query, sizeof(query), 
-        "SELECT wm.id, w.item_id as weapon_item_id, wm.name, wm.magazine_capacity, wm.hand_object_id, wm.item_id \
+        "SELECT wm.id, w.item_id as weapon_item_id, wm.name, wm.magazine_capacity, wm.hand_object_id, wm.item_id, i.item_size \
         FROM weapon_magazines wm \
         JOIN weapons w ON wm.weapon_id = w.id \
+        JOIN items i ON wm.item_id = i.id \
         ORDER BY wm.id");
     
     new Cache:result = mysql_query(g_MySQL, query);
@@ -104,10 +106,11 @@ stock LoadMagazineData()
         cache_get_value_name_int(i, "magazine_capacity", MagazineData[i][mCapacity]);
         cache_get_value_name_int(i, "hand_object_id", MagazineData[i][mHandObject]);
         cache_get_value_name_int(i, "item_id", MagazineData[i][mItemID]);
+        cache_get_value_name_int(i, "item_size", MagazineData[i][mItemSize]); // NUEVO: cargar tamaño desde BD
         
-        printf("[Weapon System] - Cargador %d: %s (WeaponItemID:%d, ItemID:%d, Capacidad:%d)",
+        printf("[Weapon System] - Cargador %d: %s (WeaponItemID:%d, ItemID:%d, Size:%d)",
             i, MagazineData[i][mName], MagazineData[i][mWeaponID], 
-            MagazineData[i][mItemID], MagazineData[i][mCapacity]);
+            MagazineData[i][mItemID], MagazineData[i][mItemSize]);
         
         TotalMagazines++;
     }
@@ -202,11 +205,28 @@ stock EquipWeaponFromInventory(playerid, slot)
     }
     
     // Verificar si mano derecha está ocupada
-    if(PlayerHeldItemSlotRight[playerid] != -1)
+    if(PlayerHeldItemSlotRight[playerid] != -1 && PlayerHeldObjectRight[playerid] != INVALID_OBJECT_ID)
     {
         SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Tu mano derecha está ocupada. Guarda el item primero.");
         return 0;
     }
+    
+    // Si el arma está en la espalda (slot 2), removerla visualmente
+    if(slot == 2 && PlayerBackSlot[playerid] == 2)
+    {
+        if(IsPlayerAttachedObjectSlotUsed(playerid, 3))
+        {
+            RemovePlayerAttachedObject(playerid, 3);
+        }
+        PlayerBackSlot[playerid] = -1;
+    }
+    
+    // Guardar datos del arma antes de limpiar el slot
+    PlayerHeldItemIDRight[playerid] = itemid;
+    PlayerHeldItemQuantityRight[playerid] = PlayerInventory[playerid][slot][invQuantity];
+    format(PlayerHeldItemMetadataRight[playerid], 256, "%s", PlayerInventory[playerid][slot][invMetadata]);
+    
+    // Las armas no marcan flag de item grande (van a la espalda cuando no se usan)
     
     // NO dar el arma real - solo mostrar objeto 3D
     // El arma se dará automáticamente al disparar
@@ -218,12 +238,23 @@ stock EquipWeaponFromInventory(playerid, slot)
     printf("[Weapon] Equipando arma '%s' (SAMP ID:%d) - Object Model: %d", 
         WeaponData[weaponIdx][wName], WeaponData[weaponIdx][wSAMPID], objectModel);
     
+    // Valores por defecto para attached object
+    new Float:posX = 0.0, Float:posY = 0.0, Float:posZ = 0.0;
+    new Float:rotX = 2.50, Float:rotY = 2.09, Float:rotZ = -0.60;
+    new Float:scaleX = 1.0, Float:scaleY = 0.95, Float:scaleZ = 1.10;
+    
+    // Verificar si hay posición personalizada guardada (slot 0 = mano derecha)
+    if(GetAttachedObjectPosition(playerid, itemid, 0, posX, posY, posZ, rotX, rotY, rotZ, scaleX, scaleY, scaleZ))
+    {
+        printf("[Weapon] Usando posición personalizada para arma %d en mano", itemid);
+    }
+    
     // Usar SetPlayerAttachedObject en lugar de CreatePlayerObject (más visible)
     // Índice 0 para arma, bone 6 = mano derecha
     SetPlayerAttachedObject(playerid, 0, objectModel, 6,
-        0.0, 0.0, 0.0,       // X, Y, Z (posición)
-        2.50, 2.09, -0.60,   // RX, RY, RZ (rotación ajustada)
-        1.0, 0.95, 1.10);    // ScaleX, ScaleY, ScaleZ
+        posX, posY, posZ,       // X, Y, Z (posición)
+        rotX, rotY, rotZ,       // RX, RY, RZ (rotación ajustada)
+        scaleX, scaleY, scaleZ); // ScaleX, ScaleY, ScaleZ
     
     PlayerHeldObjectRight[playerid] = 1; // Marcador de que hay objeto (no es ID real con SetPlayerAttachedObject)
     
@@ -234,28 +265,39 @@ stock EquipWeaponFromInventory(playerid, slot)
     PlayerCurrentWeapon[playerid] = weaponIdx;
     PlayerWeaponSlot[playerid] = slot;
     
-    // Cargar munición desde metadata si existe
-    new ammo = 0;
-    new metadata[128];
-    GetPlayerInventoryMetadata(playerid, slot, metadata, sizeof(metadata));
+    // LIMPIAR el slot del inventario - el arma se MUEVE a la mano
+    new characterID = PlayerInventory[playerid][slot][invCharacterID];
+    PlayerInventory[playerid][slot][invItemID] = 0;
+    PlayerInventory[playerid][slot][invQuantity] = 0;
+    PlayerInventory[playerid][slot][invMetadata][0] = EOS;
+    PlayerSlots[playerid][slot][slotOccupied] = 0;
+    PlayerInventoryCount[playerid]--;
     
-    if(strlen(metadata) > 0)
+    // Eliminar de la base de datos
+    new query[256];
+    format(query, sizeof(query), "DELETE FROM character_inventory WHERE character_id = %d AND slot = %d", 
+        characterID, slot);
+    mysql_tquery(g_MySQL, query);
+    
+    // Cargar munición desde metadata guardada
+    new ammo = 0;
+    if(strlen(PlayerHeldItemMetadataRight[playerid]) > 0)
     {
         // Parsear JSON simple para obtener ammo
-        new pos = strfind(metadata, "ammo\":");
+        new pos = strfind(PlayerHeldItemMetadataRight[playerid], "ammo\":");
         if(pos != -1)
         {
             pos += 6; // Saltar "ammo":
             new ammoStr[16];
             new idx = 0;
-            while(metadata[pos] >= '0' && metadata[pos] <= '9' && idx < 15)
+            while(PlayerHeldItemMetadataRight[playerid][pos] >= '0' && PlayerHeldItemMetadataRight[playerid][pos] <= '9' && idx < 15)
             {
-                ammoStr[idx++] = metadata[pos++];
+                ammoStr[idx++] = PlayerHeldItemMetadataRight[playerid][pos++];
             }
             ammoStr[idx] = 0;
             ammo = strval(ammoStr);
             
-            printf("[Weapon] Cargando arma con %d balas desde metadata: %s", ammo, metadata);
+            printf("[Weapon] Cargando arma con %d balas desde metadata: %s", ammo, PlayerHeldItemMetadataRight[playerid]);
         }
     }
     
@@ -298,11 +340,24 @@ stock EquipMagazineFromInventory(playerid, slot)
         return 0;
     
     // Verificar si mano izquierda está ocupada
-    if(PlayerHeldItemSlotLeft[playerid] != -1)
+    if(PlayerHeldItemSlotLeft[playerid] != -1 && PlayerHeldObjectLeft[playerid] != INVALID_OBJECT_ID)
     {
         SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Tu mano izquierda está ocupada. Guarda el item primero.");
         return 0;
     }
+    
+    // Si hay algo equipado, desequipar primero
+    if(PlayerHeldObjectLeft[playerid] != INVALID_OBJECT_ID)
+    {
+        UnholdItemLeft(playerid);
+    }
+    
+    // Los cargadores pueden equiparse incluso si hay item grande
+    
+    // Guardar datos del cargador antes de limpiar el slot
+    PlayerHeldItemIDLeft[playerid] = itemid;
+    PlayerHeldItemQuantityLeft[playerid] = PlayerInventory[playerid][slot][invQuantity];
+    format(PlayerHeldItemMetadataLeft[playerid], 256, "%s", PlayerInventory[playerid][slot][invMetadata]);
     
     // Equipar objeto en mano izquierda
     PlayerHeldObjectLeft[playerid] = CreatePlayerObject(playerid, MagazineData[magIdx][mHandObject],
@@ -313,6 +368,20 @@ stock EquipMagazineFromInventory(playerid, slot)
         88.0, 0.0, 90.0);    // RX, RY, RZ
     
     PlayerHeldItemSlotLeft[playerid] = slot;
+    
+    // LIMPIAR el slot del inventario - el cargador se MUEVE a la mano
+    new characterID = PlayerInventory[playerid][slot][invCharacterID];
+    PlayerInventory[playerid][slot][invItemID] = 0;
+    PlayerInventory[playerid][slot][invQuantity] = 0;
+    PlayerInventory[playerid][slot][invMetadata][0] = EOS;
+    PlayerSlots[playerid][slot][slotOccupied] = 0;
+    PlayerInventoryCount[playerid]--;
+    
+    // Eliminar de la base de datos
+    new query[256];
+    format(query, sizeof(query), "DELETE FROM character_inventory WHERE character_id = %d AND slot = %d", 
+        characterID, slot);
+    mysql_tquery(g_MySQL, query);
     
     new string[128];
     format(string, sizeof(string), "{00FF00}Has equipado: {FFFFFF}%s", MagazineData[magIdx][mName]);
@@ -333,26 +402,14 @@ stock UnequipWeapon(playerid)
     new currentAmmo = PlayerCurrentAmmo[playerid];
     SetPlayerAmmo(playerid, WEAPON:WeaponData[weaponIdx][wSAMPID], 0);
     
-    // Guardar munición y estado de equipamiento en metadata del item
-    if(PlayerWeaponSlot[playerid] != -1)
-    {
-        new slot = PlayerWeaponSlot[playerid];
-        new query[256];
-        
-        // Formatear metadata con munición y estado equipado
-        new metadata[64];
-        format(metadata, sizeof(metadata), "{\"ammo\":%d,\"equipped\":1}", currentAmmo);
-        
-        mysql_format(g_MySQL, query, sizeof(query),
-            "UPDATE character_inventory SET metadata = '%e' WHERE character_id = %d AND slot = %d",
-            metadata, CharacterData[playerid][cID], slot);
-        mysql_tquery(g_MySQL, query);
-        
-        // Actualizar en memoria también
-        format(PlayerInventory[playerid][slot][invMetadata], 128, "%s", metadata);
-        
-        printf("[Weapon] Guardando arma en slot %d con %d balas (metadata: %s)", slot, currentAmmo, metadata);
-    }
+    // Guardar slot antes de limpiar
+    new originalSlot = PlayerWeaponSlot[playerid];
+    new itemid = PlayerHeldItemIDRight[playerid];
+    
+    // Actualizar metadata con munición actual
+    new metadata[64];
+    format(metadata, sizeof(metadata), "{\"ammo\":%d}", currentAmmo);
+    format(PlayerHeldItemMetadataRight[playerid], 256, "%s", metadata);
     
     // Remover objeto attachado (SetPlayerAttachedObject usa índice 0)
     if(IsPlayerAttachedObjectSlotUsed(playerid, 0))
@@ -361,10 +418,77 @@ stock UnequipWeapon(playerid)
     }
     PlayerHeldObjectRight[playerid] = INVALID_OBJECT_ID;
     
+    // Limpiar variables de arma equipada
     PlayerHeldItemSlotRight[playerid] = -1;
     PlayerCurrentWeapon[playerid] = -1;
     PlayerCurrentAmmo[playerid] = 0;
     PlayerWeaponSlot[playerid] = -1;
+    
+    // RESTAURAR al inventario con el sistema de UnholdItem
+    // Verificar si el slot original está libre
+    new targetSlot = -1;
+    if(PlayerInventory[playerid][originalSlot][invItemID] == 0)
+    {
+        // Slot original libre, restaurar ahí
+        targetSlot = originalSlot;
+    }
+    else
+    {
+        // Slot ocupado, buscar otro slot libre compatible
+        new itemSize = GetItemSize(itemid);
+        for(new i = 0; i < MAX_INVENTORY_SLOTS; i++)
+        {
+            if(PlayerInventory[playerid][i][invItemID] == 0)
+            {
+                // Verificar si el item cabe en este slot
+                if(itemSize == ITEM_SIZE_LARGE && PlayerSlots[playerid][i][slotType] != SLOT_TYPE_BACK)
+                    continue; // Item grande solo en espalda
+                if(itemSize == ITEM_SIZE_SMALL && PlayerSlots[playerid][i][slotType] == SLOT_TYPE_BACK)
+                    continue; // Preferir bolsillos para items pequeños
+                
+                targetSlot = i;
+                break;
+            }
+        }
+    }
+    
+    // Si no hay slots libres, forzar al slot original (esto no debería pasar)
+    if(targetSlot == -1)
+    {
+        targetSlot = originalSlot;
+    }
+    
+    // Restaurar item al slot
+    new characterID = CharacterData[playerid][cID];
+    PlayerInventory[playerid][targetSlot][invItemID] = itemid;
+    PlayerInventory[playerid][targetSlot][invCharacterID] = characterID;
+    PlayerInventory[playerid][targetSlot][invSlot] = targetSlot;
+    PlayerInventory[playerid][targetSlot][invQuantity] = 1;
+    format(PlayerInventory[playerid][targetSlot][invMetadata], 128, "%s", metadata);
+    PlayerSlots[playerid][targetSlot][slotOccupied] = 1;
+    PlayerInventoryCount[playerid]++;
+    
+    // Guardar en base de datos
+    new query[512];
+    mysql_format(g_MySQL, query, sizeof(query),
+        "INSERT INTO character_inventory (character_id, item_id, slot, quantity, metadata) VALUES (%d, %d, %d, %d, '%e')",
+        characterID, itemid, targetSlot, 1, metadata);
+    mysql_tquery(g_MySQL, query);
+    
+    // Si el arma está en el slot 2 (espalda), attacharla visualmente
+    if(targetSlot == 2)
+    {
+        new itemSize = GetItemSize(itemid);
+        if(itemSize == ITEM_SIZE_LARGE)
+        {
+            AttachItemToBack(playerid, targetSlot);
+        }
+    }
+    
+    // Limpiar datos temporales
+    PlayerHeldItemIDRight[playerid] = 0;
+    PlayerHeldItemQuantityRight[playerid] = 0;
+    PlayerHeldItemMetadataRight[playerid][0] = EOS;
     
     new string[128];
     format(string, sizeof(string), "{00FF00}Has guardado el arma {FFFFFF}(%d balas guardadas)", currentAmmo);
@@ -379,6 +503,12 @@ stock UnequipMagazine(playerid)
     if(PlayerHeldItemSlotLeft[playerid] == -1)
         return 0;
     
+    new originalSlot = PlayerHeldItemSlotLeft[playerid];
+    new itemid = PlayerHeldItemIDLeft[playerid];
+    new quantity = PlayerHeldItemQuantityLeft[playerid];
+    new metadata[256];
+    format(metadata, sizeof(metadata), "%s", PlayerHeldItemMetadataLeft[playerid]);
+    
     // Destruir objeto de mano izquierda
     if(PlayerHeldObjectLeft[playerid] != INVALID_OBJECT_ID)
     {
@@ -387,6 +517,60 @@ stock UnequipMagazine(playerid)
     }
     
     PlayerHeldItemSlotLeft[playerid] = -1;
+    
+    // RESTAURAR al inventario
+    // Verificar si el slot original está libre
+    new targetSlot = -1;
+    if(PlayerInventory[playerid][originalSlot][invItemID] == 0)
+    {
+        targetSlot = originalSlot;
+    }
+    else
+    {
+        // Buscar slot libre
+        new itemSize = GetItemSize(itemid);
+        for(new i = 0; i < MAX_INVENTORY_SLOTS; i++)
+        {
+            if(PlayerInventory[playerid][i][invItemID] == 0)
+            {
+                if(itemSize == ITEM_SIZE_LARGE && PlayerSlots[playerid][i][slotType] != SLOT_TYPE_BACK)
+                    continue;
+                if(itemSize == ITEM_SIZE_SMALL && PlayerSlots[playerid][i][slotType] == SLOT_TYPE_BACK)
+                    continue;
+                
+                targetSlot = i;
+                break;
+            }
+        }
+    }
+    
+    if(targetSlot == -1)
+    {
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}No tienes espacio en el inventario.");
+        return 0;
+    }
+    
+    // Restaurar item al slot
+    new characterID = CharacterData[playerid][cID];
+    PlayerInventory[playerid][targetSlot][invItemID] = itemid;
+    PlayerInventory[playerid][targetSlot][invCharacterID] = characterID;
+    PlayerInventory[playerid][targetSlot][invSlot] = targetSlot;
+    PlayerInventory[playerid][targetSlot][invQuantity] = quantity;
+    format(PlayerInventory[playerid][targetSlot][invMetadata], 256, "%s", metadata);
+    PlayerSlots[playerid][targetSlot][slotOccupied] = 1;
+    PlayerInventoryCount[playerid]++;
+    
+    // Guardar en base de datos
+    new query[512];
+    mysql_format(g_MySQL, query, sizeof(query),
+        "INSERT INTO character_inventory (character_id, item_id, slot, quantity, metadata) VALUES (%d, %d, %d, %d, '%e')",
+        characterID, itemid, targetSlot, quantity, metadata);
+    mysql_tquery(g_MySQL, query);
+    
+    // Limpiar datos temporales
+    PlayerHeldItemIDLeft[playerid] = 0;
+    PlayerHeldItemQuantityLeft[playerid] = 0;
+    PlayerHeldItemMetadataLeft[playerid][0] = EOS;
     
     SendClientMessage(playerid, COLOR_SUCCESS, "{00FF00}Has guardado el cargador.");
     
@@ -410,8 +594,9 @@ stock ReloadWeaponFromMagazine(playerid)
         return 0;
     }
     
+    // IMPORTANTE: Cuando el cargador está equipado, el item está en PlayerHeldItemIDLeft, NO en el slot
     new magSlot = PlayerHeldItemSlotLeft[playerid];
-    new magItemID = PlayerInventory[playerid][magSlot][invItemID];
+    new magItemID = PlayerHeldItemIDLeft[playerid];
     new magIdx = GetMagazineDataByItem(magItemID);
     
     if(magIdx == -1)
@@ -436,16 +621,39 @@ stock ReloadWeaponFromMagazine(playerid)
         return 0;
     }
     
+    // NUEVO: Obtener balas del cargador actual (parsear metadata de la variable temporal)
+    new bulletsInMag = MagazineData[magIdx][mCapacity]; // Valor por defecto
+    new metadata[256];
+    format(metadata, sizeof(metadata), "%s", PlayerHeldItemMetadataLeft[playerid]);
+    
+    if(strlen(metadata) > 0)
+    {
+        // Parsear JSON para obtener bullets
+        new pos = strfind(metadata, "bullets\":");
+        if(pos != -1)
+        {
+            pos += 9; // Saltar "bullets":
+            new bulletsStr[16];
+            new idx = 0;
+            while(metadata[pos] >= '0' && metadata[pos] <= '9' && idx < 15)
+            {
+                bulletsStr[idx++] = metadata[pos++];
+            }
+            bulletsStr[idx] = 0;
+            bulletsInMag = strval(bulletsStr);
+        }
+    }
+    
     // Calcular cuántas balas se pueden recargar
     new ammosNeeded = WeaponData[weaponIdx][wAmmoCapacity] - PlayerCurrentAmmo[playerid];
-    new ammosInMag = MagazineData[magIdx][mCapacity];
-    new ammosToAdd = (ammosNeeded < ammosInMag) ? ammosNeeded : ammosInMag;
+    new ammosToAdd = (ammosNeeded < bulletsInMag) ? ammosNeeded : bulletsInMag;
     
     // Añadir munición
     PlayerCurrentAmmo[playerid] += ammosToAdd;
     
-    // Dar el arma con munición para que pueda disparar
-    GivePlayerWeapon(playerid, WEAPON:WeaponData[weaponIdx][wSAMPID], PlayerCurrentAmmo[playerid]);
+    // IMPORTANTE: Dar el arma con la munición TOTAL (no sumar, establecer)
+    // SetPlayerAmmo primero para limpiar, luego dar con la cantidad correcta
+    SetPlayerAmmo(playerid, WEAPON:WeaponData[weaponIdx][wSAMPID], PlayerCurrentAmmo[playerid]);
     SetPlayerArmedWeapon(playerid, WEAPON:WeaponData[weaponIdx][wSAMPID]);
     
     // Actualizar metadata del arma con la nueva munición
@@ -453,21 +661,41 @@ stock ReloadWeaponFromMagazine(playerid)
     {
         new weaponSlot = PlayerWeaponSlot[playerid];
         new query[256];
-        new metadata[64];
-        format(metadata, sizeof(metadata), "{\"ammo\":%d}", PlayerCurrentAmmo[playerid]);
+        new metadataWeapon[64];
+        format(metadataWeapon, sizeof(metadataWeapon), "{\"ammo\":%d}", PlayerCurrentAmmo[playerid]);
         
         mysql_format(g_MySQL, query, sizeof(query),
             "UPDATE character_inventory SET metadata = '%e' WHERE character_id = %d AND slot = %d",
-            metadata, CharacterData[playerid][cID], weaponSlot);
+            metadataWeapon, CharacterData[playerid][cID], weaponSlot);
         mysql_tquery(g_MySQL, query);
         
         // Actualizar en memoria también
-        format(PlayerInventory[playerid][weaponSlot][invMetadata], 128, "%s", metadata);
+        format(PlayerInventory[playerid][weaponSlot][invMetadata], 128, "%s", metadataWeapon);
         
         printf("[Weapon] Actualizando metadata del arma en slot %d con %d balas", weaponSlot, PlayerCurrentAmmo[playerid]);
     }
     
-    // Consumir cargador
+    // NUEVO: Dropear cargador actual al suelo (conservando balas restantes si tiene)
+    new Float:x, Float:y, Float:z, Float:angle;
+    GetPlayerPos(playerid, x, y, z);
+    GetPlayerFacingAngle(playerid, angle);
+    x += (1.0 * floatsin(-angle, degrees));
+    y += (1.0 * floatcos(-angle, degrees));
+    
+    // Crear metadata del cargador con balas restantes (0 si se consumieron todas)
+    new remainingBullets = bulletsInMag - ammosToAdd;
+    new dropMetadata[64];
+    format(dropMetadata, sizeof(dropMetadata), "{\"bullets\":%d}", remainingBullets);
+    
+    // Crear dropped item (siempre se dropea, incluso si tiene 0 balas)
+    new dropSlot = CreateDroppedItemAt(magItemID, 1, dropMetadata, x, y, z, GetPlayerInterior(playerid), GetPlayerVirtualWorld(playerid));
+    
+    if(dropSlot != -1)
+    {
+        printf("[Weapon] Cargador dropeado al suelo con %d balas restantes (slot %d)", remainingBullets, dropSlot);
+    }
+    
+    // Remover cargador del inventario
     RemovePlayerItem(playerid, magSlot);
     
     // Soltar objeto de mano izquierda
@@ -778,49 +1006,163 @@ CMD:listcargadores(playerid, params[])
 }
 
 // Comando para editar la posición del arma attachada (índice 0)
-cmd_editattachedobject(playerid, params[])
+cmd_editattachedobject(playerid, const params[])
 {
-    #pragma unused params
     if(!CharacterData[playerid][cSelected])
         return SendClientMessage(playerid, COLOR_ERROR, "Debes tener un personaje seleccionado.");
     
-    if(PlayerCurrentWeapon[playerid] == -1)
-        return SendClientMessage(playerid, COLOR_ERROR, "No tienes ningún arma equipada.");
+    // Verificar si tiene un parámetro (0 para mano derecha, 1 para mano izquierda, 3 para espalda)
+    new slotIndex = -1;
     
-    // Abrir editor de objetos attachados en el índice 0 (arma)
-    EditAttachedObject(playerid, 0);
-    SendClientMessage(playerid, COLOR_INFO, "Usa el editor para ajustar la posición del arma. Guarda cuando termines.");
-    SendClientMessage(playerid, COLOR_INFO, "Los valores se mostrarán en el chat al guardar.");
+    if(strlen(params) > 0)
+    {
+        slotIndex = strval(params);
+        if(slotIndex != 0 && slotIndex != 1 && slotIndex != 3)
+        {
+            SendClientMessage(playerid, COLOR_ERROR, "Slot inválido. Usa: /editattachedobject [0=mano derecha | 1=mano izquierda | 3=espalda]");
+            return 1;
+        }
+    }
+    
+    // Si no se especificó slot, detectar automáticamente
+    if(slotIndex == -1)
+    {
+        // Prioridad: espalda primero, luego mano derecha, luego mano izquierda
+        if(IsPlayerAttachedObjectSlotUsed(playerid, 3))
+        {
+            slotIndex = 3;
+        }
+        else if(PlayerCurrentWeapon[playerid] != -1 || IsPlayerAttachedObjectSlotUsed(playerid, 0))
+        {
+            slotIndex = 0;
+        }
+        else if(IsPlayerAttachedObjectSlotUsed(playerid, 1))
+        {
+            slotIndex = 1;
+        }
+        else
+        {
+            SendClientMessage(playerid, COLOR_ERROR, "No tienes ningún objeto equipado.");
+            SendClientMessage(playerid, COLOR_INFO, "Uso: /editattachedobject [0=mano derecha | 1=mano izquierda | 3=espalda]");
+            return 1;
+        }
+    }
+    
+    // Verificar que el slot esté en uso
+    if(!IsPlayerAttachedObjectSlotUsed(playerid, slotIndex))
+    {
+        if(slotIndex == 0)
+            SendClientMessage(playerid, COLOR_ERROR, "No tienes ningún objeto en la mano derecha.");
+        else if(slotIndex == 1)
+            SendClientMessage(playerid, COLOR_ERROR, "No tienes ningún objeto en la mano izquierda.");
+        else
+            SendClientMessage(playerid, COLOR_ERROR, "No tienes ningún item en la espalda.");
+        return 1;
+    }
+    
+    // Abrir editor
+    EditAttachedObject(playerid, slotIndex);
+    
+    new string[128];
+    if(slotIndex == 0)
+        format(string, sizeof(string), "{33CCFF}Editando objeto en {FFFFFF}MANO DERECHA");
+    else if(slotIndex == 1)
+        format(string, sizeof(string), "{33CCFF}Editando objeto en {FFFFFF}MANO IZQUIERDA");
+    else
+        format(string, sizeof(string), "{33CCFF}Editando objeto en {FFFFFF}ESPALDA");
+    
+    SendClientMessage(playerid, COLOR_INFO, string);
+    SendClientMessage(playerid, COLOR_INFO, "Ajusta la posición del objeto. Los valores se guardarán automáticamente.");
+    
     return 1;
 }
 
 // Callback cuando el jugador termina de editar el objeto attachado
 public OnPlayerEditAttachedObject(playerid, EDIT_RESPONSE:response, index, modelid, boneid, Float:fOffsetX, Float:fOffsetY, Float:fOffsetZ, Float:fRotX, Float:fRotY, Float:fRotZ, Float:fScaleX, Float:fScaleY, Float:fScaleZ)
 {
-    if(index == 0 && PlayerCurrentWeapon[playerid] != -1)
+    if(response != EDIT_RESPONSE_FINAL)
     {
-        if(response == EDIT_RESPONSE_FINAL)
+        if(response == EDIT_RESPONSE_CANCEL)
+            SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Edición cancelada.");
+        return 1;
+    }
+    
+    // Slot 0 = Mano derecha (arma o item)
+    if(index == 0)
+    {
+        new itemid = 0;
+        
+        // Obtener item ID actual
+        if(PlayerCurrentWeapon[playerid] != -1)
         {
-            // Jugador guardó los cambios - mostrar valores
-            SendClientMessage(playerid, COLOR_SUCCESS, "━━━━━━━ Valores del Arma Guardados ━━━━━━━");
+            // Es un arma
+            itemid = WeaponData[PlayerCurrentWeapon[playerid]][wItemID];
+        }
+        else if(PlayerHeldItemIDRight[playerid] != 0)
+        {
+            // Es un item normal
+            itemid = PlayerHeldItemIDRight[playerid];
+        }
+        
+        if(itemid != 0)
+        {
+            // Guardar posición personalizada
+            SaveAttachedObjectPosition(playerid, itemid, 0, fOffsetX, fOffsetY, fOffsetZ, fRotX, fRotY, fRotZ, fScaleX, fScaleY, fScaleZ);
+            
+            new itemName[64];
+            GetItemName(itemid, itemName);
             
             new string[256];
-            format(string, sizeof(string), "{FFFF00}Posición:{FFFFFF} X=%.2f, Y=%.2f, Z=%.2f", fOffsetX, fOffsetY, fOffsetZ);
-            SendClientMessage(playerid, COLOR_INFO, string);
+            format(string, sizeof(string), "{00FF00}Posición de {FFFFFF}%s {00FF00}guardada.", itemName);
+            SendClientMessage(playerid, COLOR_SUCCESS, string);
             
-            format(string, sizeof(string), "{FFFF00}Rotación:{FFFFFF} RX=%.2f, RY=%.2f, RZ=%.2f", fRotX, fRotY, fRotZ);
-            SendClientMessage(playerid, COLOR_INFO, string);
-            
-            format(string, sizeof(string), "{FFFF00}Escala:{FFFFFF} SX=%.2f, SY=%.2f, SZ=%.2f", fScaleX, fScaleY, fScaleZ);
-            SendClientMessage(playerid, COLOR_INFO, string);
-            
-            SendClientMessage(playerid, COLOR_INFO, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-            SendClientMessage(playerid, COLOR_INFO, "{AAAAAA}Copia estos valores al código si te gustan.");
-        }
-        else if(response == EDIT_RESPONSE_CANCEL)
-        {
-            SendClientMessage(playerid, COLOR_ERROR, "Edición cancelada. El arma mantiene su posición original.");
+            printf("[EditAttached] %s guardó posición para item %d (mano): X=%.2f Y=%.2f Z=%.2f RX=%.2f RY=%.2f RZ=%.2f",
+                CharacterData[playerid][cName], itemid, fOffsetX, fOffsetY, fOffsetZ, fRotX, fRotY, fRotZ);
         }
     }
+    // Slot 1 = Mano izquierda
+    else if(index == 1 && PlayerHeldObjectLeft[playerid] != INVALID_OBJECT_ID)
+    {
+        new itemid = PlayerHeldItemIDLeft[playerid];
+        
+        if(itemid != 0)
+        {
+            // Guardar posición personalizada
+            SaveAttachedObjectPosition(playerid, itemid, 1, fOffsetX, fOffsetY, fOffsetZ, fRotX, fRotY, fRotZ, fScaleX, fScaleY, fScaleZ);
+            
+            new itemName[64];
+            GetItemName(itemid, itemName);
+            
+            new string[256];
+            format(string, sizeof(string), "{00FF00}Posición de {FFFFFF}%s {00FF00}en mano izquierda guardada.", itemName);
+            SendClientMessage(playerid, COLOR_SUCCESS, string);
+            
+            printf("[EditAttached] %s guardó posición para item %d (mano izquierda): X=%.2f Y=%.2f Z=%.2f RX=%.2f RY=%.2f RZ=%.2f",
+                CharacterData[playerid][cName], itemid, fOffsetX, fOffsetY, fOffsetZ, fRotX, fRotY, fRotZ);
+        }
+    }
+    // Slot 3 = Espalda (items grandes)
+    else if(index == 3 && PlayerBackSlot[playerid] != -1)
+    {
+        new slot = PlayerBackSlot[playerid];
+        new itemid = PlayerInventory[playerid][slot][invItemID];
+        
+        if(itemid != 0)
+        {
+            // Guardar posición personalizada
+            SaveAttachedObjectPosition(playerid, itemid, 3, fOffsetX, fOffsetY, fOffsetZ, fRotX, fRotY, fRotZ, fScaleX, fScaleY, fScaleZ);
+            
+            new itemName[64];
+            GetItemName(itemid, itemName);
+            
+            new string[256];
+            format(string, sizeof(string), "{00FF00}Posición de {FFFFFF}%s {00FF00}en espalda guardada.", itemName);
+            SendClientMessage(playerid, COLOR_SUCCESS, string);
+            
+            printf("[EditAttached] %s guardó posición para item %d (espalda): X=%.2f Y=%.2f Z=%.2f RX=%.2f RY=%.2f RZ=%.2f",
+                CharacterData[playerid][cName], itemid, fOffsetX, fOffsetY, fOffsetZ, fRotX, fRotY, fRotZ);
+        }
+    }
+    
     return 1;
 }

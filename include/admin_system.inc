@@ -24,6 +24,27 @@ forward bool:IsModerator(playerid);
 forward bool:IsAdministrator(playerid);
 forward bool:IsOwner(playerid);
 #pragma warning pop
+// Sistema de dudas
+#define MAX_DUDAS 50
+#define DUDA_TIMEOUT 180 // 3 minutos en segundos
+
+enum E_DUDA_DATA
+{
+    bool:dudaActiva,
+    dudaPlayerID,
+    dudaAdminID,
+    dudaUltimaInteraccion,
+    dudaTexto[128],
+    dudaTimer
+}
+
+new DudaData[MAX_DUDAS][E_DUDA_DATA];
+new PlayerDudaID[MAX_PLAYERS] = {-1, ...};
+new bool:PlayerInDudaChat[MAX_PLAYERS] = {false, ...};
+new AdminDudaID[MAX_PLAYERS] = {-1, ...};
+
+// Variables del sistema admin
+new bool:PlayerInFreecam[MAX_PLAYERS] = {false, ...};
 
 // Verificar permisos
 stock bool:IsHelper(playerid)
@@ -38,7 +59,8 @@ stock bool:IsModerator(playerid)
 
 stock bool:IsAdministrator(playerid)
 {
-    return (UserData[playerid][uAdminLevel] >= 3);
+    // Asegurar que el retorno sea explícitamente booleano
+    return bool:(UserData[playerid][uAdminLevel] >= 3);
 }
 
 stock bool:IsOwner(playerid)
@@ -59,7 +81,7 @@ CMD:acmds(playerid, params[])
     }
     
     new string[2048];
-    strcat(string, "{FFFFFF}=== {FF6347}Comandos de Administración{FFFFFF} ===\n\n");
+    strcat(string, "{FFFFFF}=== {FF6347}Comandos de Administracion{FFFFFF} ===\n\n");
     
     if(IsHelper(playerid))
     {
@@ -68,17 +90,19 @@ CMD:acmds(playerid, params[])
         strcat(string, "/setint [id] - Cambiar interior ID\n");
         strcat(string, "/setvw [id] - Cambiar virtual world\n");
         strcat(string, "/checkint [id] - Ver propiedades en interior\n");
-        strcat(string, "/checkvw [id] - Ver propiedades en VW\n\n");
+        strcat(string, "/checkvw [id] - Ver propiedades en VW\n");
+        strcat(string, "/verdudas - Ver panel de dudas pendientes\n");
+        strcat(string, "/cerrarduda - Cerrar sesion de duda activa\n\n");
     }
     
     if(IsModerator(playerid))
     {
         strcat(string, "{FFD700}[Nivel 2 - Moderador]{FFFFFF}\n");
-        strcat(string, "/panel [playerid] - Gestión completa de jugadores\n");
+        strcat(string, "/panel [playerid] - Gestion completa de jugadores\n");
         strcat(string, "{AAAAAA}  (Ir, Traer, Mutear, Freeze, Warn, Jail, Kick, Ban, Espectar)\n");
-        strcat(string, "/vehiculos [playerid] - Gestionar vehículos\n");
+        strcat(string, "/vehiculos [playerid] - Gestionar vehiculos\n");
         strcat(string, "/dar [playerid] - Dar items/beneficios (Vida, Armadura, Dinero, Jetpack, Skins, Autos)\n");
-        strcat(string, "/afk - Activar/desactivar modo AFK\n\n");
+        strcat(string, "/pm [ID] [mensaje] - Mensaje privado (solo admins)\n\n");
     }
     
     if(IsAdministrator(playerid))
@@ -89,7 +113,7 @@ CMD:acmds(playerid, params[])
         strcat(string, "/createbusiness, /deletebusiness, /editbusiness\n");
         strcat(string, "/setmoney, /setadmin, /giveweapon, /jetpack\n");
         strcat(string, "/darmarma [id] [arma] [balas] - Dar arma al inventario\n");
-        strcat(string, "/darcargador [id] [tipo] [cant] - Dar munición\n\n");
+        strcat(string, "/darcargador [id] [tipo] [cant] - Dar municion\n\n");
     }
     
     if(IsOwner(playerid))
@@ -99,31 +123,36 @@ CMD:acmds(playerid, params[])
         strcat(string, "/setadmin [playerid] [nivel] - Otorgar rango de admin\n");
     }
     
-    ShowPlayerDialog(playerid, 0, DIALOG_STYLE_MSGBOX, "Comandos de Administración", string, "Cerrar", "");
+    ShowPlayerDialog(playerid, 0, DIALOG_STYLE_MSGBOX, "Comandos de Administracion", string, "Cerrar", "");
     return 1;
 }
 
 // Comando de ayuda general con controles
 CMD:controles(playerid, params[])
 {
-    new string[900];
+    new string[768];
     strcat(string, "{FFFFFF}=== {00FF00}Controles del Servidor{FFFFFF} ===\n\n");
     strcat(string, "{FFD700}[Teclas de Juego]\n");
     strcat(string, "{FFFFFF}Y - Abrir inventario\n");
-    strcat(string, "{FFFFFF}N - Encender/Apagar motor del vehículo\n");
+    strcat(string, "{FFFFFF}N - Encender/Apagar motor del vehiculo\n");
     strcat(string, "{FFFFFF}H - Entrar/Salir de propiedades\n\n");
-    strcat(string, "{FFD700}[Comandos Básicos]\n");
+    strcat(string, "{FFD700}[Comandos de Chat Roleplay]\n");
+    strcat(string, "{C2A2DA}/me [accion]{FFFFFF} - Accion en primera persona\n");
+    strcat(string, "{FFFFE0}/do [descripcion]{FFFFFF} - Descripcion del entorno\n");
+    strcat(string, "{FFFFFF}/intentar [accion]{FFFFFF} - Accion con exito/fracaso aleatorio\n");
+    strcat(string, "{999999}/b [mensaje]{FFFFFF} - Chat Out Of Character (OOC)\n");
+    strcat(string, "{FFFFFF}/g [mensaje]{FFFFFF} - Gritar (40m de alcance)\n");
+    strcat(string, "{FFFFFF}/s [mensaje]{FFFFFF} - Susurrar (5m de alcance)\n\n");
+    strcat(string, "{FFD700}[Comandos Basicos]\n");
     strcat(string, "{FFFFFF}/inventario - Ver tu inventario\n");
     strcat(string, "{FFFFFF}/motor - Alternar motor (igual que tecla N)\n");
     strcat(string, "{FFFFFF}/entrar o /salir - Entrar/salir (igual que H)\n");
-    strcat(string, "{FFFFFF}/buscarvehiculo - Encontrar tus vehículos\n");
-    strcat(string, "{FFFFFF}/vehiculos - Ver lista de vehículos\n\n");
-    strcat(string, "{FFD700}[Sistema de Armas]\n");
-    strcat(string, "{FFFFFF}/equipar [slot] - Equipar arma del inventario\n");
-    strcat(string, "{FFFFFF}/recargar - Recargar arma equipada\n\n");
-    strcat(string, "{FFD700}[Información]\n");
+    strcat(string, "{FFFFFF}/buscarvehiculo - Encontrar tus vehiculos\n");
+    strcat(string, "{FFFFFF}/vehiculos - Ver lista de vehiculos\n\n");
+    strcat(string, "{FFD700}[Informacion]\n");
     strcat(string, "{FFFFFF}/controles o /ayuda - Ver esta ayuda\n");
     strcat(string, "{AAAAAA}Usa {FFFF00}/acmds{AAAAAA} si eres administrador.\n");
+    strcat(string, "{AAAAAA}El chat tiene {FFFF00}20m de alcance{AAAAAA} con gradiente de color.\n");
     
     ShowPlayerDialog(playerid, 0, DIALOG_STYLE_MSGBOX, "Controles y Ayuda", string, "Cerrar", "");
     return 1;
@@ -268,7 +297,7 @@ CMD:setadmin(playerid, params[])
     // Verificar que el nivel de admin sea válido (0-4)
     if(adminlevel < 0 || adminlevel > 4)
     {
-        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}Nivel de admin inválido. Rango permitido: 0-4");
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}Nivel de admin invalido. Rango permitido: 0-4");
         return 1;
     }
     
@@ -357,7 +386,6 @@ new AdminVehicleSelected[MAX_PLAYERS] = {-1, ...};
 // Variables para sistema de administración
 new AdminPanelTarget[MAX_PLAYERS] = {INVALID_PLAYER_ID, ...};
 new AdminDarTarget[MAX_PLAYERS] = {INVALID_PLAYER_ID, ...};
-new bool:PlayerInFreecam[MAX_PLAYERS] = {false, ...};
 new PlayerWarnings[MAX_PLAYERS] = {0, ...}; // Sistema de advertencias
 new bool:PlayerFrozen[MAX_PLAYERS] = {false, ...}; // Estado de freeze
 
@@ -382,7 +410,7 @@ CMD:panel(playerid, params[])
     
     // Mostrar panel
     new dialog[512], title[128];
-    format(title, sizeof(title), "Panel de Administración - %s", CharacterData[targetid][cName]);
+    format(title, sizeof(title), "Panel de Administracion - %s", CharacterData[targetid][cName]);
     format(dialog, sizeof(dialog),
         "Ir\n\
         Traer\n\
@@ -442,7 +470,7 @@ public OnAdminLoadPlayerVehicles(playerid)
     {
         new targetid = AdminVehicleTarget[playerid];
         new string[128];
-        format(string, sizeof(string), "{FF0000}%s no tiene vehículos registrados.", CharacterData[targetid][cName]);
+        format(string, sizeof(string), "{FF0000}%s no tiene vehiculos registrados.", CharacterData[targetid][cName]);
         SendClientMessage(playerid, COLOR_ERROR, string);
         return 1;
     }
@@ -475,7 +503,7 @@ public OnAdminLoadPlayerVehicles(playerid)
     
     new targetid = AdminVehicleTarget[playerid];
     new title[128];
-    format(title, sizeof(title), "Vehículos de %s (%d vehículos)", CharacterData[targetid][cName], rows);
+    format(title, sizeof(title), "Vehiculos de %s (%d vehiculos)", CharacterData[targetid][cName], rows);
     
     ShowPlayerDialog(playerid, DIALOG_ADMIN_VEHICLE_LIST, DIALOG_STYLE_TABLIST_HEADERS, title, dialog, "Seleccionar", "Cerrar");
     return 1;
@@ -641,7 +669,7 @@ stock OnAdminVehicleDelConfirm(playerid, response)
 {
     if(!response) 
     {
-        SendClientMessage(playerid, COLOR_INFO, "Eliminación cancelada.");
+        SendClientMessage(playerid, COLOR_INFO, "Eliminacion cancelada.");
         return 1;
     }
     
@@ -896,7 +924,7 @@ CMD:checkint(playerid, params[])
     new interiorid;
     if(sscanf(params, "d", interiorid))
     {
-        SendClientMessage(playerid, COLOR_WHITE, "{FFFF00}[USO]{FFFFFF} /checkint [interior id] - Verifica qué propiedades usan este interior");
+        SendClientMessage(playerid, COLOR_WHITE, "{FFFF00}[USO]{FFFFFF} /checkint [interior id] - Verifica que propiedades usan este interior");
         return 1;
     }
     
@@ -920,7 +948,7 @@ CMD:checkvw(playerid, params[])
     new virtualworld;
     if(sscanf(params, "d", virtualworld))
     {
-        SendClientMessage(playerid, COLOR_WHITE, "{FFFF00}[USO]{FFFFFF} /checkvw [virtual world] - Verifica qué propiedades usan este VW");
+        SendClientMessage(playerid, COLOR_WHITE, "{FFFF00}[USO]{FFFFFF} /checkvw [virtual world] - Verifica que propiedades usan este VW");
         return 1;
     }
     
@@ -945,13 +973,13 @@ public OnCheckInteriorUsage(playerid, interiorid)
     if(rows == 0)
     {
         new string[128];
-        format(string, sizeof(string), "{00FF00}[INFO]{FFFFFF} El interior %d no está en uso por ninguna propiedad.", interiorid);
+        format(string, sizeof(string), "{00FF00}[INFO]{FFFFFF} El interior %d no esta en uso por ninguna propiedad.", interiorid);
         SendClientMessage(playerid, COLOR_SUCCESS, string);
         return 1;
     }
     
     new string[256];
-    format(string, sizeof(string), "{FFAA00}[ADVERTENCIA]{FFFFFF} El interior %d está en uso por %d propiedad(es):", interiorid, rows);
+    format(string, sizeof(string), "{FFAA00}[ADVERTENCIA]{FFFFFF} El interior %d esta en uso por %d propiedad(es):", interiorid, rows);
     SendClientMessage(playerid, COLOR_YELLOW, string);
     
     for(new i = 0; i < rows; i++)
@@ -968,7 +996,7 @@ public OnCheckInteriorUsage(playerid, interiorid)
             case 1: typename = "Casa Pequeña";
             case 2: typename = "Casa Mediana";
             case 3: typename = "Casa Grande";
-            case 4: typename = "Mansión";
+            case 4: typename = "Mansion";
             case 5: typename = "Tienda";
             case 6: typename = "Empresa";
             default: typename = "Desconocido";
@@ -991,13 +1019,13 @@ public OnCheckVirtualWorldUsage(playerid, virtualworld)
     if(rows == 0)
     {
         new string[128];
-        format(string, sizeof(string), "{00FF00}[INFO]{FFFFFF} El virtual world %d no está en uso por ninguna propiedad.", virtualworld);
+        format(string, sizeof(string), "{00FF00}[INFO]{FFFFFF} El virtual world %d no esta en uso por ninguna propiedad.", virtualworld);
         SendClientMessage(playerid, COLOR_SUCCESS, string);
         return 1;
     }
     
     new string[256];
-    format(string, sizeof(string), "{FFAA00}[ADVERTENCIA]{FFFFFF} El virtual world %d está en uso por %d propiedad(es):", virtualworld, rows);
+    format(string, sizeof(string), "{FFAA00}[ADVERTENCIA]{FFFFFF} El virtual world %d esta en uso por %d propiedad(es):", virtualworld, rows);
     SendClientMessage(playerid, COLOR_YELLOW, string);
     
     for(new i = 0; i < rows; i++)
@@ -1014,7 +1042,7 @@ public OnCheckVirtualWorldUsage(playerid, virtualworld)
             case 1: typename = "Casa Pequeña";
             case 2: typename = "Casa Mediana";
             case 3: typename = "Casa Grande";
-            case 4: typename = "Mansión";
+            case 4: typename = "Mansion";
             case 5: typename = "Tienda";
             case 6: typename = "Empresa";
             default: typename = "Desconocido";
@@ -1069,9 +1097,6 @@ CMD:dar(playerid, params[])
 // Comando: /afk - Activar/desactivar modo AFK (cámara libre)
 CMD:afk(playerid, params[])
 {
-    if(!IsModerator(playerid))
-        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}Necesitas ser Moderador nivel 2.");
-    
     if(!CharacterData[playerid][cID])
         return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}No has seleccionado un personaje.");
     
@@ -1084,7 +1109,9 @@ CMD:afk(playerid, params[])
         SendClientMessage(playerid, COLOR_SUCCESS, "{00FF00}Modo AFK activado.");
         SendClientMessage(playerid, COLOR_INFO, "{33CCFF}Usa {FFFFFF}/afk {33CCFF}nuevamente para desactivar.");
         
-        printf("[Admin] %s activo modo AFK", CharacterData[playerid][cName]);
+        new string[128];
+        format(string, sizeof(string), "* %s esta ausente (AFK)", CharacterData[playerid][cName]);
+        SendClientMessageToAll(COLOR_GRAY, string);
     }
     else
     {
@@ -1096,8 +1123,289 @@ CMD:afk(playerid, params[])
         
         SendClientMessage(playerid, COLOR_SUCCESS, "{00FF00}Modo AFK desactivado.");
         
-        printf("[Admin] %s desactivo modo AFK", CharacterData[playerid][cName]);
+        new string[128];
+        format(string, sizeof(string), "* %s ha regresado", CharacterData[playerid][cName]);
+        SendClientMessageToAll(COLOR_GRAY, string);
     }
+    
+    return 1;
+}
+
+// ============================================================================
+// SISTEMA DE DUDAS
+// ============================================================================
+
+// Función para obtener un slot de duda libre
+stock GetFreeDudaSlot()
+{
+    for(new i = 0; i < MAX_DUDAS; i++)
+    {
+        if(!DudaData[i][dudaActiva])
+            return i;
+    }
+    return -1;
+}
+
+// Timer callback para cerrar dudas inactivas
+forward CheckDudaTimeout(dudaid);
+public CheckDudaTimeout(dudaid)
+{
+    if(dudaid < 0 || dudaid >= MAX_DUDAS) return;
+    if(!DudaData[dudaid][dudaActiva]) return;
+    
+    new currentTime = gettime();
+    new timeDiff = currentTime - DudaData[dudaid][dudaUltimaInteraccion];
+    
+    // Si han pasado 3 minutos (180 segundos) sin interacción
+    if(timeDiff >= DUDA_TIMEOUT)
+    {
+        new playerid = DudaData[dudaid][dudaPlayerID];
+        new adminid = DudaData[dudaid][dudaAdminID];
+        
+        if(IsPlayerConnected(playerid))
+        {
+            SendClientMessage(playerid, COLOR_INFO, "{FF6347}[STAFF] {FFFFFF}La sesion de ayuda ha finalizado por inactividad (3 minutos).");
+            PlayerDudaID[playerid] = -1;
+            PlayerInDudaChat[playerid] = false;
+        }
+        
+        if(adminid != -1 && IsPlayerConnected(adminid))
+        {
+            SendClientMessage(adminid, COLOR_ADMIN_MSG, "{FF6347}[STAFF] {FFFFFF}La sesion de ayuda ha finalizado por inactividad (3 minutos).");
+            AdminDudaID[adminid] = -1;
+            PlayerInDudaChat[adminid] = false;
+        }
+        
+        // Limpiar datos
+        DudaData[dudaid][dudaActiva] = false;
+        DudaData[dudaid][dudaPlayerID] = -1;
+        DudaData[dudaid][dudaAdminID] = -1;
+        DudaData[dudaid][dudaTexto][0] = 0;
+        
+        // Matar el timer
+        KillTimer(DudaData[dudaid][dudaTimer]);
+        DudaData[dudaid][dudaTimer] = 0;
+    }
+}
+
+// Comando /duda
+CMD:duda(playerid, params[])
+{
+    if(!CharacterData[playerid][cSelected])
+        return SendClientMessage(playerid, COLOR_RED, "Debes seleccionar un personaje primero!");
+    
+    if(isnull(params))
+        return SendClientMessage(playerid, COLOR_GRAY, "Uso: /duda [tu pregunta o duda]");
+    
+    // Verificar si ya tiene una duda activa
+    if(PlayerDudaID[playerid] != -1)
+    {
+        new dudaid = PlayerDudaID[playerid];
+        if(DudaData[dudaid][dudaAdminID] != -1)
+        {
+            // Ya está en comunicación con un admin
+            return SendClientMessage(playerid, COLOR_INFO, "{FF6347}[STAFF] {FFFFFF}Ya tienes una sesión activa con un administrador.");
+        }
+        else
+        {
+            return SendClientMessage(playerid, COLOR_INFO, "{FF6347}[STAFF] {FFFFFF}Tu duda ya fue enviada. Espera a que un administrador la acepte.");
+        }
+    }
+    
+    // Crear nueva duda
+    new dudaid = GetFreeDudaSlot();
+    if(dudaid == -1)
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}El sistema de dudas esta lleno. Intenta mas tarde.");
+    
+    // Registrar duda
+    DudaData[dudaid][dudaPlayerID] = playerid;
+    DudaData[dudaid][dudaAdminID] = -1;
+    DudaData[dudaid][dudaActiva] = true;
+    DudaData[dudaid][dudaUltimaInteraccion] = gettime();
+    format(DudaData[dudaid][dudaTexto], 128, "%s", params);
+    
+    PlayerDudaID[playerid] = dudaid;
+    
+    // Notificar al jugador
+    SendClientMessage(playerid, COLOR_SUCCESS, "{00FF00}[STAFF] {FFFFFF}Tu duda ha sido enviada al staff.");
+    SendClientMessage(playerid, COLOR_INFO, "{33CCFF}Espera a que un administrador la acepte en el panel de dudas.");
+    
+    // Notificar a todos los administradores
+    new string[128];
+    format(string, sizeof(string), 
+        "{FF6347}[NUEVA DUDA] {FFFFFF}%s ha enviado una duda. Usa {FFFF00}/verdudas {FFFFFF}para verla.",
+        CharacterData[playerid][cName]);
+    
+    for(new i = 0; i < MAX_PLAYERS; i++)
+    {
+        if(IsPlayerConnected(i) && IsHelper(i))
+        {
+            SendClientMessage(i, COLOR_ADMIN_MSG, string);
+        }
+    }
+    
+    return 1;
+}
+
+// Comando /verdudas - Panel de dudas para administradores
+CMD:verdudas(playerid, params[])
+{
+    if(!IsHelper(playerid))
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}No tienes permisos para usar este comando.");
+    
+    // Verificar si el admin ya tiene una duda activa
+    if(AdminDudaID[playerid] != -1)
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}Ya estas atendiendo una duda. Cierrala primero con /cerrarduda.");
+    
+    // Construir lista de dudas pendientes
+    new string[2048], dudaCount = 0;
+    strcat(string, "{FFFFFF}ID\t{FFFFFF}Jugador\t{FFFFFF}Duda\n");
+    
+    for(new i = 0; i < MAX_DUDAS; i++)
+    {
+        if(DudaData[i][dudaActiva] && DudaData[i][dudaAdminID] == -1)
+        {
+            new targetid = DudaData[i][dudaPlayerID];
+            if(IsPlayerConnected(targetid))
+            {
+                new tempStr[256];
+                format(tempStr, sizeof(tempStr), "{FFFF00}%d\t{FFFFFF}%s (ID:%d)\t{AAAAAA}%s\n", 
+                    i, CharacterData[targetid][cName], targetid, DudaData[i][dudaTexto]);
+                strcat(string, tempStr);
+                dudaCount++;
+            }
+            else
+            {
+                // Limpiar duda si el jugador se desconectó
+                DudaData[i][dudaActiva] = false;
+                PlayerDudaID[targetid] = -1;
+            }
+        }
+    }
+    
+    if(dudaCount == 0)
+    {
+        SendClientMessage(playerid, COLOR_INFO, "{33CCFF}[STAFF] {FFFFFF}No hay dudas pendientes en este momento.");
+        return 1;
+    }
+    
+    ShowPlayerDialog(playerid, DIALOG_DUDA_LIST, DIALOG_STYLE_TABLIST_HEADERS, 
+        "{FF6347}Panel de Dudas - Selecciona una para responder", string, "Responder", "Cerrar");
+    
+    return 1;
+}
+
+// Callback para el diálogo de dudas
+stock OnDialogDudaList(playerid, response, listitem)
+{
+    if(!response) return 1;
+    
+    // Buscar la duda seleccionada
+    new currentItem = 0;
+    for(new i = 0; i < MAX_DUDAS; i++)
+    {
+        if(DudaData[i][dudaActiva] && DudaData[i][dudaAdminID] == -1)
+        {
+            new targetid = DudaData[i][dudaPlayerID];
+            if(IsPlayerConnected(targetid))
+            {
+                if(currentItem == listitem)
+                {
+                    // Asignar admin a la duda
+                    DudaData[i][dudaAdminID] = playerid;
+                    DudaData[i][dudaUltimaInteraccion] = gettime();
+                    AdminDudaID[playerid] = i;
+                    PlayerInDudaChat[playerid] = true;
+                    PlayerInDudaChat[targetid] = true;
+                    
+                    // Iniciar timer de 3 minutos
+                    DudaData[i][dudaTimer] = SetTimerEx("CheckDudaTimeout", 60000, true, "d", i);
+                    
+                    // Notificar al jugador
+                    new string[256];
+                    format(string, sizeof(string), 
+                        "{00FF00}[STAFF] {FFFFFF}El administrador {FFFF00}%s {FFFFFF}esta atendiendo tu duda.",
+                        CharacterData[playerid][cName]);
+                    SendClientMessage(targetid, COLOR_SUCCESS, string);
+                    SendClientMessage(targetid, COLOR_INFO, "{33CCFF}Escribe en el chat para comunicarte. No podras usar otros chats hasta que se cierre la sesion.");
+                    
+                    // Notificar al admin
+                    format(string, sizeof(string),
+                        "{00FF00}[STAFF] {FFFFFF}Has aceptado la duda de {FFFF00}%s",
+                        CharacterData[targetid][cName]);
+                    SendClientMessage(playerid, COLOR_SUCCESS, string);
+                    SendClientMessage(playerid, COLOR_ADMIN_MSG, "{FF6347}[DUDA] {FFFFFF}Usa {FFFF00}/cerrarduda {FFFFFF}para finalizar la sesion cuando termines.");
+                    
+                    // Mostrar la duda original
+                    format(string, sizeof(string),
+                        "{FF6347}[DUDA ORIGINAL] {FFFFFF}%s", DudaData[i][dudaTexto]);
+                    SendClientMessage(playerid, COLOR_ADMIN_MSG, string);
+                    SendClientMessage(playerid, COLOR_INFO, "{33CCFF}Escribe en el chat para responder. No podras usar otros chats hasta cerrar la sesion.");
+                    
+                    return 1;
+                }
+                currentItem++;
+            }
+        }
+    }
+    
+    return 1;
+}
+
+// Comando /cerrarduda
+CMD:cerrarduda(playerid, params[])
+{
+    if(!IsHelper(playerid))
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}No tienes permisos para usar este comando.");
+    
+    if(AdminDudaID[playerid] == -1)
+        return SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}No estas atendiendo ninguna duda actualmente.");
+    
+    new dudaid = AdminDudaID[playerid];
+    new targetid = DudaData[dudaid][dudaPlayerID];
+    
+    // Notificar al jugador
+    if(IsPlayerConnected(targetid))
+    {
+        SendClientMessage(targetid, COLOR_SUCCESS, "{00FF00}[STAFF] {FFFFFF}La sesion de ayuda ha finalizado. Gracias por tu consulta.");
+        PlayerDudaID[targetid] = -1;
+        PlayerInDudaChat[targetid] = false;
+        
+        // Mensaje visible en el chat
+        new string[128];
+        format(string, sizeof(string), "* El administrador %s ha cerrado la sesion de ayuda con %s", 
+            CharacterData[playerid][cName], CharacterData[targetid][cName]);
+        SendClientMessageToAll(COLOR_GRAY, string);
+    }
+    
+    // Limpiar datos
+    DudaData[dudaid][dudaActiva] = false;
+    DudaData[dudaid][dudaAdminID] = -1;
+    AdminDudaID[playerid] = -1;
+    PlayerInDudaChat[playerid] = false;
+    KillTimer(DudaData[dudaid][dudaTimer]);
+    
+    // Notificar al jugador con mensaje visible
+    if(IsPlayerConnected(targetid))
+    {
+        new string[144];
+        format(string, sizeof(string), "* El administrador %s ha cerrado la sesion de ayuda.", CharacterData[playerid][cName]);
+        SendClientMessage(targetid, COLOR_SUCCESS, string);
+        SendClientMessage(targetid, COLOR_INFO, "{33CCFF}Gracias por tu consulta. Puedes enviar otra duda con /duda cuando lo necesites.");
+        PlayerDudaID[targetid] = -1;
+        PlayerInDudaChat[targetid] = false;
+    }
+    
+    // Mensaje visible para el admin
+    new msgString[144];
+    format(msgString, sizeof(msgString), "* %s ha cerrado la sesion de ayuda con %s.", CharacterData[playerid][cName], CharacterData[targetid][cName]);
+    SendClientMessage(playerid, COLOR_SUCCESS, msgString);
+    
+    // Limpiar datos
+    DudaData[dudaid][dudaActiva] = false;
+    DudaData[dudaid][dudaAdminID] = -1;
+    AdminDudaID[playerid] = -1;
+    PlayerInDudaChat[playerid] = false;
     
     return 1;
 }
