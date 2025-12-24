@@ -59,15 +59,16 @@
 #define DIALOG_EDIT_GENDER      1009
 #define DIALOG_DEALERSHIP_CATALOG 1010
 #define DIALOG_INVENTORY        1011
-#define DIALOG_ADMIN_VEHICLE_LIST 1012
-#define DIALOG_ADMIN_VEHICLE_ACTIONS 1013
-#define DIALOG_ADMIN_VEHICLE_DELETE_CONFIRM 1014
-#define DIALOG_PLAYER_FIND_VEHICLE 1015
-#define DIALOG_PLAYER_STATS 1016
-#define DIALOG_INTERIORS_LIST 1017
-#define DIALOG_BUSINESS_SHOP 1018
-#define DIALOG_BUSINESS_CONFIG 1019
-#define DIALOG_INFO 1020
+#define DIALOG_INVENTORY_DROP   1012
+#define DIALOG_ADMIN_VEHICLE_LIST 1013
+#define DIALOG_ADMIN_VEHICLE_ACTIONS 1014
+#define DIALOG_ADMIN_VEHICLE_DELETE_CONFIRM 1015
+#define DIALOG_PLAYER_FIND_VEHICLE 1016
+#define DIALOG_PLAYER_STATS 1017
+#define DIALOG_INTERIORS_LIST 1018
+#define DIALOG_BUSINESS_SHOP 1019
+#define DIALOG_BUSINESS_CONFIG 1020
+#define DIALOG_INFO 1021
 #define DIALOG_ADMIN_PANEL 1021
 #define DIALOG_ADMIN_PANEL_KICK 1022
 #define DIALOG_ADMIN_PANEL_BAN 1023
@@ -78,6 +79,7 @@
 #define DIALOG_ADMIN_DAR 1028
 #define DIALOG_ADMIN_DAR_MONEY 1029
 #define DIALOG_ADMIN_DAR_SKIN 1030
+#define DIALOG_DUDA_LIST 1031
 #define DIALOG_ADMIN_DAR_VEHICLE 1031
 #define DIALOG_ADMIN_DAR_VEHICLE_SEARCH 1032
 #define DIALOG_ADMIN_DAR_VEHICLE_RESULT 1033
@@ -258,7 +260,8 @@ public OnGameModeInit()
     // Inicializar sistema de dudas
     for(new i = 0; i < MAX_DUDAS; i++)
     {
-        DudaData[i][dudaActiva] = 0;
+        // Asegurar que dudaActiva sea booleano
+        DudaData[i][dudaActiva] = false;
         DudaData[i][dudaPlayerID] = -1;
         DudaData[i][dudaAdminID] = -1;
         DudaData[i][dudaTimer] = 0;
@@ -276,7 +279,7 @@ public OnGameModeExit()
     if(g_MySQL != MYSQL_INVALID_HANDLE)
     {
         mysql_close(g_MySQL);
-        print("[MySQL] Conexión cerrada correctamente.");
+        print("[MySQL] Conexion cerrada correctamente.");
     }
     return true;
 }
@@ -340,12 +343,12 @@ public OnPlayerDisconnect(playerid, reason)
             new adminid = DudaData[dudaid][dudaAdminID];
             if(adminid != -1 && IsPlayerConnected(adminid))
             {
-                SendClientMessage(adminid, COLOR_ADMIN_MSG, "{FF6347}[STAFF] {FFFFFF}El jugador se ha desconectado. La sesión de ayuda ha finalizado.");
+                SendClientMessage(adminid, COLOR_ADMIN_MSG, "{FF6347}[STAFF] {FFFFFF}El jugador se ha desconectado. La sesion de ayuda ha finalizado.");
                 AdminDudaID[adminid] = -1;
             }
             
             // Limpiar duda
-            DudaData[dudaid][dudaActiva] = 0;
+            DudaData[dudaid][dudaActiva] = false;
             if(DudaData[dudaid][dudaTimer] != 0)
                 KillTimer(DudaData[dudaid][dudaTimer]);
         }
@@ -366,7 +369,7 @@ public OnPlayerDisconnect(playerid, reason)
             }
             
             // Limpiar duda
-            DudaData[dudaid][dudaActiva] = 0;
+            DudaData[dudaid][dudaActiva] = false;
             if(DudaData[dudaid][dudaTimer] != 0)
                 KillTimer(DudaData[dudaid][dudaTimer]);
         }
@@ -379,7 +382,7 @@ public OnPlayerDisconnect(playerid, reason)
     switch(reason)
     {
         case 0: reasonText = "Timeout/Crash";
-        case 1: reasonText = "Salió";
+        case 1: reasonText = "Salio";
         case 2: reasonText = "Kick/Ban";
     }
     
@@ -464,7 +467,7 @@ public OnPlayerKeyStateChange(playerid, KEY:newkeys, KEY:oldkeys)
         return 1;
     }
     
-    // Tecla H - Entrar/Salir de propiedades y tiendas (KEY_CTRL_BACK)
+    // Tecla H - Usar item mano izquierda o Entrar/Salir de propiedades (KEY_CTRL_BACK)
     if((newkeys & KEY_CTRL_BACK) && !(oldkeys & KEY_CTRL_BACK))
     {
         printf("[DEBUG H] Tecla H presionada por %s", CharacterData[playerid][cName]);
@@ -473,6 +476,31 @@ public OnPlayerKeyStateChange(playerid, KEY:newkeys, KEY:oldkeys)
         {
             printf("[DEBUG H] Personaje seleccionado OK");
             
+            // PRIORIDAD 1: Si está a pie y tiene item en mano izquierda, usar item (función de /usar)
+            if(!IsPlayerInAnyVehicle(playerid) && PlayerHeldItemSlotLeft[playerid] != -1)
+            {
+                printf("[DEBUG H] Jugador a pie con item en mano izquierda - Ejecutando función usar");
+                
+                // Si tiene arma en mano derecha y cargador en mano izquierda, recargar
+                if(PlayerCurrentWeapon[playerid] != -1)
+                {
+                    // IMPORTANTE: Cuando el cargador está equipado, el item está en PlayerHeldItemIDLeft, NO en el slot
+                    new magItemID = PlayerHeldItemIDLeft[playerid];
+                    
+                    if(IsMagazineItem(magItemID))
+                    {
+                        printf("[DEBUG H] Cargador detectado (ID: %d), iniciando recarga", magItemID);
+                        ReloadWeaponFromMagazine(playerid);
+                        return 1;
+                    }
+                }
+                
+                // Si solo tiene item en mano izquierda, indicar que no se puede usar así
+                SendClientMessage(playerid, COLOR_INFO, "{FFD700}INFO: {FFFFFF}La tecla H recarga tu arma si tienes cargador en mano izquierda.");
+                return 1;
+            }
+            
+            // PRIORIDAD 2: Entrar/Salir de propiedades y tiendas
             // Si está dentro de una propiedad, salir
             if(PlayerInProperty[playerid] != -1)
             {
@@ -542,7 +570,7 @@ public OnPlayerCommandText(playerid, cmdtext[])
         {
             format(dialogString, sizeof(dialogString), "%s%d. %s\n", dialogString, 400 + i, VehicleNames[i]);
         }
-        ShowPlayerDialog(playerid, DIALOG_AUTO, DIALOG_STYLE_LIST, "Selecciona un vehículo", dialogString, "Seleccionar", "Cancelar");
+        ShowPlayerDialog(playerid, DIALOG_AUTO, DIALOG_STYLE_LIST, "Selecciona un vehiculo", dialogString, "Seleccionar", "Cancelar");
         return 1;
     }
     
@@ -732,7 +760,7 @@ public OnPlayerText(playerid, text[])
         }
         
         // Si llegamos aquí, no se puede enviar el mensaje
-        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}Estás en una sesión de duda. Espera a que se cierre.");
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error: {FFFFFF}Estas en una sesion de duda. Espera a que se cierre.");
         return 0;
     }
     
@@ -840,6 +868,10 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
     // Dialog de inventario
     if(dialogid == DIALOG_INVENTORY)
         return OnDialogInventory(playerid, response, listitem);
+    
+    // Dialog de tirar item
+    if(dialogid == DIALOG_INVENTORY_DROP)
+        return OnDialogInventoryDrop(playerid, response, listitem);
     
     // Dialog de negocios
     if(dialogid == DIALOG_BUSINESS_SHOP)
@@ -1283,7 +1315,7 @@ public OnPlayerStatsLoaded(playerid)
 
 MySQL_Connect()
 {
-    print("[MySQL] Iniciando conexión...");
+    print("[MySQL] Iniciando conexion...");
     printf("[MySQL] Host: %s:%d", MYSQL_HOST, MYSQL_PORT);
     printf("[MySQL] User: %s", MYSQL_USER);
     printf("[MySQL] Database: %s", MYSQL_DATABASE);
@@ -1316,7 +1348,7 @@ MySQL_Connect()
     
     if(errno != 0)
     {
-        printf("[MySQL] ERROR: Código de error %d", errno);
+        printf("[MySQL] ERROR: Codigo de error %d", errno);
         return false;
     }
     
@@ -1635,7 +1667,7 @@ CMD:pm(playerid, params[])
         return SendClientMessage(playerid, COLOR_GRAY, "Uso: /pm [ID del jugador] [mensaje]");
     
     if(!IsPlayerConnected(targetid))
-        return SendClientMessage(playerid, COLOR_RED, "El jugador no está conectado.");
+        return SendClientMessage(playerid, COLOR_RED, "El jugador no esta conectado.");
     
     if(!CharacterData[targetid][cSelected])
         return SendClientMessage(playerid, COLOR_RED, "Ese jugador no ha seleccionado un personaje.");
@@ -1662,7 +1694,7 @@ CMD:f(playerid, params[])
     if(!CharacterData[playerid][cSelected])
         return SendClientMessage(playerid, COLOR_RED, "Debes seleccionar un personaje primero!");
     
-    SendClientMessage(playerid, COLOR_GRAY, "El sistema de facciones aún no está implementado.");
+    SendClientMessage(playerid, COLOR_GRAY, "El sistema de facciones aun no esta implementado.");
     
     // TODO: Implementar cuando exista el sistema de facciones
     /*

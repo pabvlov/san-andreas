@@ -212,6 +212,57 @@ stock DropItemToGround(playerid, slot)
     return dropSlot;
 }
 
+// Crear dropped item en una posición específica (sin remover del inventario)
+stock CreateDroppedItemAt(itemid, quantity, const metadata[], Float:x, Float:y, Float:z, interior, vworld)
+{
+    // Buscar slot libre
+    new dropSlot = -1;
+    for(new i = 0; i < MAX_DROPPED_ITEMS; i++)
+    {
+        if(!DroppedItems[i][dActive])
+        {
+            dropSlot = i;
+            break;
+        }
+    }
+    
+    if(dropSlot == -1)
+    {
+        printf("[Dropped Items] ERROR: No hay espacio para más items en el suelo.");
+        return -1;
+    }
+    
+    // Guardar datos del item
+    DroppedItems[dropSlot][dItemID] = itemid;
+    DroppedItems[dropSlot][dQuantity] = quantity;
+    format(DroppedItems[dropSlot][dMetadata], 128, "%s", metadata);
+    DroppedItems[dropSlot][dPosX] = x;
+    DroppedItems[dropSlot][dPosY] = y;
+    DroppedItems[dropSlot][dPosZ] = z;
+    DroppedItems[dropSlot][dInterior] = interior;
+    DroppedItems[dropSlot][dVirtualWorld] = vworld;
+    DroppedItems[dropSlot][dActive] = true;
+    
+    // Crear objeto 3D en el mundo (armas acostadas, otros items parados)
+    new modelid = GetItemObjectModel(itemid);
+    new Float:rotX = IsItemWeapon(itemid) ? 90.0 : 0.0;
+    DroppedItems[dropSlot][dObjectID] = CreateDynamicObject(modelid, x, y, z - 0.9, rotX, 0.0, 0.0, vworld, interior);
+    
+    // Guardar en BD
+    new query[512];
+    mysql_format(g_MySQL, query, sizeof(query),
+        "INSERT INTO dropped_items (item_id, quantity, metadata, pos_x, pos_y, pos_z, interior, virtual_world) VALUES (%d, %d, '%e', %f, %f, %f, %d, %d)",
+        itemid, quantity, metadata, x, y, z, interior, vworld);
+    
+    new Cache:cache = mysql_query(g_MySQL, query);
+    DroppedItems[dropSlot][dDBID] = cache_insert_id();
+    cache_delete(cache);
+    
+    printf("[Dropped Items] Item dropeado: ItemID=%d (x%d) en pos=(%.2f, %.2f, %.2f)", itemid, quantity, x, y, z);
+    
+    return dropSlot;
+}
+
 // Recoger item del suelo
 stock PickupDroppedItem(playerid, dropSlot)
 {
