@@ -17,10 +17,13 @@
 #define COLOR_ADMIN_MSG (0xFF6347FF)
 
 // Forward declarations
+#pragma warning push
+#pragma warning disable 203
 forward bool:IsHelper(playerid);
 forward bool:IsModerator(playerid);
 forward bool:IsAdministrator(playerid);
 forward bool:IsOwner(playerid);
+#pragma warning pop
 
 // Verificar permisos
 stock bool:IsHelper(playerid)
@@ -391,7 +394,8 @@ CMD:panel(playerid, params[])
         Banear\n\
         Espectar\n\
         Estadísticas\n\
-        Inventario");
+        Inventario\n\
+        Curar");
     
     ShowPlayerDialog(playerid, DIALOG_ADMIN_PANEL, DIALOG_STYLE_LIST, title, dialog, "Seleccionar", "Cancelar");
     return 1;
