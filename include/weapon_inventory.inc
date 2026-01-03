@@ -12,8 +12,11 @@
 #define _weapon_inventory_included
 
 // Forward declarations
+#pragma warning push
+#pragma warning disable 203
 forward bool:IsWeaponItem(itemid);
 forward bool:IsMagazineItem(itemid);
+#pragma warning pop
 
 // Note: Weapon/Magazine data structures declared in inventory_system.inc
 // WeaponData, MagazineData, TotalWeapons, TotalMagazines

@@ -353,6 +353,31 @@ stock OnDialogAdminPanel(playerid, response, listitem)
             // TODO: Implementar vista de inventario completa
             SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Vista de inventario en desarrollo.");
         }
+        case 11: // Curar
+        {
+            // Resetear salud a 100
+            SetPlayerHealth(targetid, 100.0);
+            
+            // Limpiar todas las heridas
+            ClearWounds(targetid);
+            
+            // Salir de estado de agonía si está en él
+            if(PlayerAgonyState[targetid] != AGONY_STATE_NORMAL)
+            {
+                ExitAgony(targetid);
+            }
+            
+            format(string, sizeof(string), "{00FF00}Has curado completamente a {FFFFFF}%s{00FF00}. Todas sus heridas han sido eliminadas.", 
+                CharacterData[targetid][cName]);
+            SendClientMessage(playerid, COLOR_SUCCESS, string);
+            
+            format(string, sizeof(string), "{00FF00}Has sido curado completamente por el admin {FFFFFF}%s", 
+                CharacterData[playerid][cName]);
+            SendClientMessage(targetid, COLOR_SUCCESS, string);
+            
+            printf("[Admin] %s curo completamente a %s via panel (heridas reseteadas)", 
+                CharacterData[playerid][cName], CharacterData[targetid][cName]);
+        }
     }
     
     return 1;

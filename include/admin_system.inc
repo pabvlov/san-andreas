@@ -16,6 +16,14 @@
 // Colores para mensajes admin
 #define COLOR_ADMIN_MSG (0xFF6347FF)
 
+// Forward declarations
+#pragma warning push
+#pragma warning disable 203
+forward bool:IsHelper(playerid);
+forward bool:IsModerator(playerid);
+forward bool:IsAdministrator(playerid);
+forward bool:IsOwner(playerid);
+#pragma warning pop
 // Sistema de dudas
 #define MAX_DUDAS 50
 #define DUDA_TIMEOUT 180 // 3 minutos en segundos
@@ -413,8 +421,9 @@ CMD:panel(playerid, params[])
         Expulsar\n\
         Banear\n\
         Espectar\n\
-        Estadisticas\n\
-        Inventario");
+        Estadísticas\n\
+        Inventario\n\
+        Curar");
     
     ShowPlayerDialog(playerid, DIALOG_ADMIN_PANEL, DIALOG_STYLE_LIST, title, dialog, "Seleccionar", "Cancelar");
     return 1;

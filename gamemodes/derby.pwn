@@ -207,6 +207,7 @@ public OnVehicleDamageStatusUpdate(vehicleid, playerid)
 #include "../include/vehicle_engine_system.inc"
 #include "../include/vehicle_persistence.inc"
 #include "../include/dealership_system.inc"
+#include "../include/agonize.inc"
 #include "../include/admin_system.inc"
 #include "../include/admin_dialogs.inc"
 #include "../include/zones/unity_station.inc"
@@ -216,6 +217,21 @@ main()
     print("=====================================");
     print("  San Andreas Roleplay - pabvlov");
     print("=====================================");
+}
+
+public OnPlayerTakeDamage(playerid, issuerid, Float:amount, WEAPON:weaponid, bodypart)
+{
+    return Agony_OnPlayerTakeDamage(playerid, issuerid, amount, _:weaponid, bodypart);
+}
+
+public OnPlayerDeath(playerid, killerid, WEAPON:reason)
+{
+    return Agony_OnPlayerDeath(playerid, killerid, _:reason);
+}
+
+public OnPlayerUpdate(playerid)
+{
+    return Agony_OnPlayerUpdate(playerid);
 }
 
 public OnGameModeInit()
@@ -238,6 +254,7 @@ public OnGameModeInit()
     
     // Inicializar sistemas
     InitVehiclePersistence();
+    InitAgonySystem();
     
     // Unity Station spawn
     AddPlayerClass(0, 1759.0189, -1898.1260, 13.5622, 266.4503, WEAPON_FIST, 0, WEAPON_FIST, 0, WEAPON_FIST, 0);
@@ -412,6 +429,9 @@ public OnPlayerExitVehicle(playerid, vehicleid)
 
 public OnPlayerSpawn(playerid)
 {
+    // Primero verificar si está muerto (sistema de agonía)
+    Agony_OnPlayerSpawn(playerid);
+    
     if(!CharacterData[playerid][cSelected])
     {
         Kick(playerid);
@@ -660,6 +680,10 @@ public OnPlayerCommandText(playerid, cmdtext[])
     if(strcmp(cmd, "/listcargadores", true) == 0) return cmd_listcargadores(playerid, cmdtext[idx]);
     if(strcmp(cmd, "/tirar", true) == 0) return cmd_tirar(playerid, cmdtext[idx]);
     if(strcmp(cmd, "/recoger", true) == 0) return cmd_recoger(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/heridas", true) == 0) return cmd_heridas(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/pedirmorir", true) == 0) return cmd_pedirmorir(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/aceptarmorir", true) == 0) return cmd_aceptarmorir(playerid, cmdtext[idx]);
+    if(strcmp(cmd, "/reaparecer", true) == 0) return cmd_reaparecer(playerid, cmdtext[idx]);
     if(strcmp(cmd, "/editattachedobject", true) == 0) return cmd_editattachedobject(playerid, cmdtext[idx]);
     
     return 0; // Comando no encontrado
