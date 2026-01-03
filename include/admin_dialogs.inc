@@ -7,6 +7,166 @@
 #endif
 #define _admin_dialogs_included
 
+// Variables globales para búsqueda de vehículos
+new AdminVehicleSearchResults[MAX_PLAYERS][50]; // Guardar índices de vehículos encontrados
+new AdminVehiclePage[MAX_PLAYERS]; // Página actual del listado de vehículos
+
+#define VEHICLES_PER_PAGE 20 // Vehículos por página para evitar stack overflow
+
+// Función para mostrar una página del listado de vehículos
+stock ShowAdminVehicleListPage(playerid)
+{
+    new page = AdminVehiclePage[playerid];
+    new totalVehicles = sizeof(VehicleModelNames);
+    new totalPages = (totalVehicles / VEHICLES_PER_PAGE) + ((totalVehicles % VEHICLES_PER_PAGE) ? 1 : 0);
+    
+    // Validar página
+    if(page < 0) page = 0;
+    if(page >= totalPages) page = totalPages - 1;
+    AdminVehiclePage[playerid] = page;
+    
+    printf("[DEBUG ShowVehiclePage] Player:%d Pagina:%d/%d TotalVehicles:%d", playerid, page + 1, totalPages, totalVehicles);
+    
+    new vehiclelist[1024];
+    new startIdx = page * VEHICLES_PER_PAGE;
+    new endIdx = startIdx + VEHICLES_PER_PAGE;
+    if(endIdx > totalVehicles) endIdx = totalVehicles;
+    
+    // Agregar opción de búsqueda al inicio
+    strcat(vehiclelist, "{FFFF00}» Buscar por nombre\n");
+    
+    // Agregar vehículos de esta página
+    for(new i = startIdx; i < endIdx; i++)
+    {
+        format(vehiclelist, sizeof(vehiclelist), "%s%s\n", vehiclelist, VehicleModelNames[i]);
+    }
+    
+    // Agregar navegación
+    if(page > 0)
+        strcat(vehiclelist, "{00FF00}« Página Anterior\n");
+    if(page < totalPages - 1)
+        strcat(vehiclelist, "{00FF00}Página Siguiente »\n");
+    
+    new title[64];
+    format(title, sizeof(title), "Dar Vehículo - Página %d/%d", page + 1, totalPages);
+    
+    printf("[DEBUG ShowVehiclePage] Mostrando dialogo - Items en pagina: %d", endIdx - startIdx);
+    ShowPlayerDialog(playerid, DIALOG_ADMIN_DAR_VEHICLE, DIALOG_STYLE_LIST, title, vehiclelist, "Dar", "Cancelar");
+}
+
+// Función helper para dar un vehículo permanente a un jugador
+stock AdminGiveVehicle(playerid, targetid, model)
+{
+    printf("[DEBUG AdminGiveVehicle] INICIO - Admin:%d Target:%d Model:%d", playerid, targetid, model);
+    
+    // Generar placa única
+    new plate[9];
+    format(plate, sizeof(plate), "ADM%d%d", random(999), CharacterData[targetid][cID]);
+    printf("[DEBUG AdminGiveVehicle] Placa generada: %s", plate);
+    
+    // Posición del vehículo cerca del jugador objetivo
+    new Float:x, Float:y, Float:z, Float:angle;
+    GetPlayerPos(targetid, x, y, z);
+    GetPlayerFacingAngle(targetid, angle);
+    x += 3.0;
+    printf("[DEBUG AdminGiveVehicle] Posicion: %.2f, %.2f, %.2f, Angulo: %.2f", x, y, z, angle);
+    
+    // Crear vehículo en la BD
+    new query[512];
+    mysql_format(g_MySQL, query, sizeof(query),
+        "INSERT INTO `vehicles` (`model`, `owner_type`, `owner_id`, `plate`, `pos_x`, `pos_y`, `pos_z`, `pos_a`, `fiscal_price`, `is_spawned`) \
+        VALUES (%d, 'character', %d, '%e', %.4f, %.4f, %.4f, %.4f, 0, 1)",
+        model, CharacterData[targetid][cID], plate, x, y, z, angle);
+    
+    printf("[DEBUG AdminGiveVehicle] Ejecutando query MySQL: %s", query);
+    
+    new Cache:result = mysql_query(g_MySQL, query);
+    new vehicleID = cache_insert_id();
+    cache_delete(result);
+    
+    printf("[DEBUG AdminGiveVehicle] VehicleID insertado en BD: %d", vehicleID);
+    
+    if(vehicleID > 0)
+    {
+        printf("[DEBUG AdminGiveVehicle] VehicleID valido, procediendo a crear vehiculo");
+        
+        // Spawnear vehículo y guardar ID en memoria
+        new ingameVehicleID = CreateVehicle(model, x, y, z, angle, -1, -1, 300000);
+        printf("[DEBUG AdminGiveVehicle] CreateVehicle retorno ID: %d", ingameVehicleID);
+        
+        SetVehicleDBID(ingameVehicleID, vehicleID);
+        printf("[DEBUG AdminGiveVehicle] SetVehicleDBID llamado: ingame=%d db=%d", ingameVehicleID, vehicleID);
+        
+        printf("[Admin] Vehículo spawneado - ingame ID: %d, DB ID: %d", ingameVehicleID, vehicleID);
+        
+        // Dar 2 llaves del vehículo: 1 maestra (ID 1) + 1 normal (ID 2)
+        new metadata[128];
+        format(metadata, sizeof(metadata), "vehicleid:%d|plate:%s", vehicleID, plate);
+        printf("[DEBUG AdminGiveVehicle] Metadata de llaves: %s", metadata);
+        
+        // Llave maestra (item ID 1)
+        printf("[DEBUG AdminGiveVehicle] Dando llave maestra (item ID 1)...");
+        new keyMasterResult = GivePlayerItem(targetid, 1, 1, metadata);
+        printf("[DEBUG AdminGiveVehicle] Resultado llave maestra: %d", keyMasterResult);
+        
+        // Llave normal (item ID 2)
+        printf("[DEBUG AdminGiveVehicle] Dando llave normal (item ID 2)...");
+        new keyNormalResult = GivePlayerItem(targetid, 2, 1, metadata);
+        printf("[DEBUG AdminGiveVehicle] Resultado llave normal: %d", keyNormalResult);
+        
+        if(keyMasterResult && keyNormalResult)
+        {
+            printf("[Admin] 2 llaves dadas correctamente a %s (placa: %s)", 
+                CharacterData[targetid][cName], plate);
+            
+            // Refrescar inventario para mostrar las llaves inmediatamente
+            ShowInventoryDialog(targetid);
+        }
+        else
+        {
+            printf("[Admin] ERROR: Llaves no entregadas - Master: %d, Normal: %d", 
+                keyMasterResult, keyNormalResult);
+            SendClientMessage(targetid, COLOR_ERROR, "{FF0000}ADVERTENCIA: {FFFFFF}No se pudieron dar las llaves. Contacta a un admin.");
+        }
+        
+        new string[256];
+        new vehicleName[32];
+        
+        // Obtener nombre del vehículo
+        if(model >= 400 && model <= 611)
+        {
+            format(vehicleName, sizeof(vehicleName), "%s", VehicleModelNames[model - 400]);
+        }
+        else
+        {
+            format(vehicleName, sizeof(vehicleName), "Vehículo ID %d", model);
+        }
+        
+        // Mensaje al admin
+        format(string, sizeof(string), "{00FF00}Has dado un {FFFFFF}%s {00FF00}(Placa: %s) a {FFFFFF}%s", 
+            vehicleName, plate, CharacterData[targetid][cName]);
+        SendClientMessage(playerid, COLOR_SUCCESS, string);
+        
+        // Mensaje al jugador
+        format(string, sizeof(string), "{FFD700}Admin {FFFFFF}%s {FFD700}te ha dado un {FFFFFF}%s {FFD700}(Placa: %s)\n{FFFF00}Has recibido 1 llave maestra y 1 llave normal.", 
+            CharacterData[playerid][cName], vehicleName, plate);
+        SendClientMessage(targetid, COLOR_ADMIN_MSG, string);
+        
+        printf("[Admin] %s dio %s (DB ID: %d, Placa: %s) a %s", 
+            CharacterData[playerid][cName], vehicleName, vehicleID, plate, CharacterData[targetid][cName]);
+        
+        return 1;
+    }
+    else
+    {
+        printf("[DEBUG AdminGiveVehicle] ERROR - vehicleID es 0 o negativo: %d", vehicleID);
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error al crear el vehículo en la base de datos.");
+        return 0;
+    }
+    
+    printf("[DEBUG AdminGiveVehicle] FIN - Retornando 1");
+}
+
 // Handler del diálogo principal del panel de administración
 stock OnDialogAdminPanel(playerid, response, listitem)
 {
@@ -467,16 +627,12 @@ stock OnDialogAdminDar(playerid, response, listitem)
         }
         case 5: // Autos
         {
-            new vehiclelist[2048];
-            strcat(vehiclelist, "Buscar por nombre\n");
-            for(new i = 0; i < sizeof(VehicleNames); i++)
-            {
-                format(vehiclelist, sizeof(vehiclelist), "%s%s\n", vehiclelist, VehicleNames[i]);
-            }
-            ShowPlayerDialog(playerid, DIALOG_ADMIN_DAR_VEHICLE, DIALOG_STYLE_LIST,
-                "Dar Vehículo",
-                vehiclelist,
-                "Dar", "Cancelar");
+            printf("[DEBUG /dar] Jugador %s (ID:%d) selecciono opcion AUTOS", CharacterData[playerid][cName], playerid);
+            printf("[DEBUG /dar] Target: %s (ID:%d)", CharacterData[targetid][cName], targetid);
+            
+            // Resetear página a 0 y mostrar primera página
+            AdminVehiclePage[playerid] = 0;
+            ShowAdminVehicleListPage(playerid);
         }
         case 6: // Armas
         {
@@ -600,46 +756,78 @@ stock OnDialogAdminDarSkin(playerid, response, const inputtext[])
 
 stock OnDialogAdminDarVehicle(playerid, response, listitem)
 {
-    if(!response) return 1;
+    printf("[DEBUG OnDialogAdminDarVehicle] Llamado - Player:%d Response:%d Listitem:%d", playerid, response, listitem);
+    
+    if(!response)
+    {
+        printf("[DEBUG OnDialogAdminDarVehicle] Player %d cancelo el dialogo", playerid);
+        return 1;
+    }
     
     new targetid = AdminDarTarget[playerid];
+    printf("[DEBUG OnDialogAdminDarVehicle] Target guardado: %d", targetid);
+    
     if(!IsPlayerConnected(targetid))
     {
+        printf("[DEBUG OnDialogAdminDarVehicle] Target %d no esta conectado", targetid);
         SendClientMessage(playerid, COLOR_ERROR, "{FF0000}El jugador ya no está conectado.");
         return 1;
     }
     
-    // Si selecciona "Buscar por nombre"
+    printf("[DEBUG OnDialogAdminDarVehicle] Target %s (ID:%d) esta conectado", CharacterData[targetid][cName], targetid);
+    
+    new page = AdminVehiclePage[playerid];
+    new totalVehicles = sizeof(VehicleModelNames);
+    new totalPages = (totalVehicles / VEHICLES_PER_PAGE) + ((totalVehicles % VEHICLES_PER_PAGE) ? 1 : 0);
+    new startIdx = page * VEHICLES_PER_PAGE;
+    new itemsInPage = VEHICLES_PER_PAGE;
+    if(startIdx + itemsInPage > totalVehicles) itemsInPage = totalVehicles - startIdx;
+    
+    // Item 0 es siempre "Buscar por nombre"
     if(listitem == 0)
     {
+        printf("[DEBUG OnDialogAdminDarVehicle] Opcion 'Buscar por nombre' seleccionada");
         ShowPlayerDialog(playerid, DIALOG_ADMIN_DAR_VEHICLE_SEARCH, DIALOG_STYLE_INPUT,
             "Buscar Vehículo",
-            "{FFFFFF}Ingresa el nombre del vehículo a buscar:",
+            "{FFFFFF}Ingresa el nombre del vehículo a buscar:\n{FFFF00}Ejemplos: {FFFFFF}infernus, sultan, sanchez, bmx",
             "Buscar", "Cancelar");
         return 1;
     }
     
-    // Ajustar índice (el primer item es "Buscar por nombre")
-    new vehicleIndex = listitem - 1;
+    // Calcular posición de botones de navegación
+    new prevButtonPos = itemsInPage + 1; // Después de los vehículos
+    new nextButtonPos = prevButtonPos;
+    if(page > 0) nextButtonPos++; // Si hay botón anterior, el siguiente está después
+    
+    // Verificar si es botón de navegación "Anterior"
+    if(page > 0 && listitem == prevButtonPos)
+    {
+        printf("[DEBUG OnDialogAdminDarVehicle] Navegacion: Pagina Anterior (de %d a %d)", page + 1, page);
+        AdminVehiclePage[playerid]--;
+        ShowAdminVehicleListPage(playerid);
+        return 1;
+    }
+    
+    // Verificar si es botón de navegación "Siguiente"
+    if(page < totalPages - 1 && listitem == nextButtonPos)
+    {
+        printf("[DEBUG OnDialogAdminDarVehicle] Navegacion: Pagina Siguiente (de %d a %d)", page + 1, page + 2);
+        AdminVehiclePage[playerid]++;
+        ShowAdminVehicleListPage(playerid);
+        return 1;
+    }
+    
+    // Es un vehículo - calcular índice real (restando 1 por el botón de búsqueda)
+    new vehicleIndex = startIdx + (listitem - 1);
     new vehicleModelId = 400 + vehicleIndex;
     
-    new Float:x, Float:y, Float:z, Float:a;
-    GetPlayerPos(targetid, x, y, z);
-    GetPlayerFacingAngle(targetid, a);
+    printf("[DEBUG OnDialogAdminDarVehicle] Listitem:%d -> VehicleIndex:%d -> ModelID:%d", listitem, vehicleIndex, vehicleModelId);
+    printf("[DEBUG OnDialogAdminDarVehicle] Llamando AdminGiveVehicle(%d, %d, %d)", playerid, targetid, vehicleModelId);
     
-    new vehicleid = CreateVehicle(vehicleModelId, x + 3.0, y, z, a, -1, -1, 60000);
+    // Usar la función helper para dar el vehículo permanentemente
+    AdminGiveVehicle(playerid, targetid, vehicleModelId);
     
-    new string[256];
-    format(string, sizeof(string), "{00FF00}Has dado un {FFFFFF}%s {00FF00}a {FFFFFF}%s", 
-        VehicleNames[vehicleIndex], CharacterData[targetid][cName]);
-    SendClientMessage(playerid, COLOR_SUCCESS, string);
-    
-    format(string, sizeof(string), "{FFD700}Admin {FFFFFF}%s {FFD700}te ha dado un {FFFFFF}%s", 
-        CharacterData[playerid][cName], VehicleNames[vehicleIndex]);
-    SendClientMessage(targetid, COLOR_ADMIN_MSG, string);
-    
-    printf("[Admin] %s dio %s (ID: %d) a %s", 
-        CharacterData[playerid][cName], VehicleNames[vehicleIndex], vehicleid, CharacterData[targetid][cName]);
+    printf("[DEBUG OnDialogAdminDarVehicle] AdminGiveVehicle finalizado");
     
     return 1;
 }
@@ -647,17 +835,27 @@ stock OnDialogAdminDarVehicle(playerid, response, listitem)
 // Handler para búsqueda de vehículos por nombre
 stock OnDialogAdminDarVehicleSearch(playerid, response, inputtext[])
 {
-    if(!response) return 1;
+    printf("[DEBUG OnDialogAdminDarVehicleSearch] Llamado - Player:%d Response:%d Input:'%s'", playerid, response, inputtext);
+    
+    if(!response)
+    {
+        printf("[DEBUG OnDialogAdminDarVehicleSearch] Player %d cancelo la busqueda", playerid);
+        return 1;
+    }
     
     new targetid = AdminDarTarget[playerid];
+    printf("[DEBUG OnDialogAdminDarVehicleSearch] Target: %d", targetid);
+    
     if(!IsPlayerConnected(targetid))
     {
+        printf("[DEBUG OnDialogAdminDarVehicleSearch] Target %d no esta conectado", targetid);
         SendClientMessage(playerid, COLOR_ERROR, "{FF0000}El jugador ya no está conectado.");
         return 1;
     }
     
     if(strlen(inputtext) < 2)
     {
+        printf("[DEBUG OnDialogAdminDarVehicleSearch] Input muy corto: %d caracteres", strlen(inputtext));
         SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Ingresa al menos 2 caracteres para buscar.");
         return 1;
     }
@@ -665,6 +863,12 @@ stock OnDialogAdminDarVehicleSearch(playerid, response, inputtext[])
     // Buscar vehículos que coincidan
     new searchResults[2048], resultsCount = 0;
     new searchLower[64], vehicleNameLower[64];
+    
+    // Limpiar resultados previos
+    for(new i = 0; i < 50; i++)
+    {
+        AdminVehicleSearchResults[playerid][i] = -1;
+    }
     
     // Convertir búsqueda a minúsculas
     format(searchLower, sizeof(searchLower), "%s", inputtext);
@@ -675,9 +879,9 @@ stock OnDialogAdminDarVehicleSearch(playerid, response, inputtext[])
     }
     
     // Buscar coincidencias
-    for(new i = 0; i < sizeof(VehicleNames); i++)
+    for(new i = 0; i < sizeof(VehicleModelNames); i++)
     {
-        format(vehicleNameLower, sizeof(vehicleNameLower), "%s", VehicleNames[i]);
+        format(vehicleNameLower, sizeof(vehicleNameLower), "%s", VehicleModelNames[i]);
         
         // Convertir nombre del vehículo a minúsculas
         for(new j = 0; vehicleNameLower[j] != 0; j++)
@@ -689,7 +893,8 @@ stock OnDialogAdminDarVehicleSearch(playerid, response, inputtext[])
         // Verificar si contiene la búsqueda
         if(strfind(vehicleNameLower, searchLower, true) != -1)
         {
-            format(searchResults, sizeof(searchResults), "%s%s\n", searchResults, VehicleNames[i]);
+            format(searchResults, sizeof(searchResults), "%s%s\n", searchResults, VehicleModelNames[i]);
+            AdminVehicleSearchResults[playerid][resultsCount] = i; // Guardar índice
             resultsCount++;
             
             if(resultsCount >= 50) break; // Limitar resultados
@@ -698,9 +903,13 @@ stock OnDialogAdminDarVehicleSearch(playerid, response, inputtext[])
     
     if(resultsCount == 0)
     {
+        printf("[DEBUG OnDialogAdminDarVehicleSearch] No se encontraron resultados para: '%s'", inputtext);
         SendClientMessage(playerid, COLOR_ERROR, "{FF0000}No se encontraron vehículos con ese nombre.");
         return 1;
     }
+    
+    printf("[DEBUG OnDialogAdminDarVehicleSearch] Se encontraron %d resultados", resultsCount);
+    printf("[DEBUG OnDialogAdminDarVehicleSearch] Mostrando dialogo DIALOG_ADMIN_DAR_VEHICLE_RESULT");
     
     ShowPlayerDialog(playerid, DIALOG_ADMIN_DAR_VEHICLE_RESULT, DIALOG_STYLE_LIST,
         "Resultados de Búsqueda",
@@ -713,52 +922,51 @@ stock OnDialogAdminDarVehicleSearch(playerid, response, inputtext[])
 // Handler para selección de vehículo desde búsqueda
 stock OnDialogAdminDarVehSearch(playerid, response, listitem, const inputtext[])
 {
-    #pragma unused listitem, inputtext
-    if(!response) return 1;
+    #pragma unused inputtext
+    printf("[DEBUG OnDialogAdminDarVehSearch] Llamado - Player:%d Response:%d Listitem:%d", playerid, response, listitem);
+    
+    if(!response)
+    {
+        printf("[DEBUG OnDialogAdminDarVehSearch] Player %d cancelo la seleccion", playerid);
+        return 1;
+    }
     
     new targetid = AdminDarTarget[playerid];
+    printf("[DEBUG OnDialogAdminDarVehSearch] Target: %d", targetid);
+    
     if(!IsPlayerConnected(targetid))
     {
+        printf("[DEBUG OnDialogAdminDarVehSearch] Target %d no esta conectado", targetid);
         SendClientMessage(playerid, COLOR_ERROR, "{FF0000}El jugador ya no está conectado.");
         return 1;
     }
     
-    // Buscar el índice del vehículo por nombre
-    new vehicleIndex = -1;
-    for(new i = 0; i < sizeof(VehicleNames); i++)
+    // Obtener el índice del vehículo desde los resultados guardados
+    if(listitem < 0 || listitem >= 50)
     {
-        if(strcmp(inputtext, VehicleNames[i], true) == 0)
-        {
-            vehicleIndex = i;
-            break;
-        }
+        printf("[DEBUG OnDialogAdminDarVehSearch] Listitem fuera de rango: %d", listitem);
+        SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Selección inválida.");
+        return 1;
     }
+    
+    new vehicleIndex = AdminVehicleSearchResults[playerid][listitem];
+    printf("[DEBUG OnDialogAdminDarVehSearch] VehicleIndex obtenido: %d", vehicleIndex);
     
     if(vehicleIndex == -1)
     {
+        printf("[DEBUG OnDialogAdminDarVehSearch] VehicleIndex es -1, error en la seleccion");
         SendClientMessage(playerid, COLOR_ERROR, "{FF0000}Error al seleccionar el vehículo.");
         return 1;
     }
     
     new vehicleModelId = 400 + vehicleIndex;
+    printf("[DEBUG OnDialogAdminDarVehSearch] ModelID calculado: %d", vehicleModelId);
+    printf("[DEBUG OnDialogAdminDarVehSearch] Llamando AdminGiveVehicle(%d, %d, %d)", playerid, targetid, vehicleModelId);
     
-    new Float:x, Float:y, Float:z, Float:a;
-    GetPlayerPos(targetid, x, y, z);
-    GetPlayerFacingAngle(targetid, a);
+    // Usar la función helper para dar el vehículo permanentemente
+    AdminGiveVehicle(playerid, targetid, vehicleModelId);
     
-    new vehicleid = CreateVehicle(vehicleModelId, x + 3.0, y, z, a, -1, -1, 60000);
-    
-    new string[256];
-    format(string, sizeof(string), "{00FF00}Has dado un {FFFFFF}%s {00FF00}a {FFFFFF}%s", 
-        VehicleNames[vehicleIndex], CharacterData[targetid][cName]);
-    SendClientMessage(playerid, COLOR_SUCCESS, string);
-    
-    format(string, sizeof(string), "{FFD700}Admin {FFFFFF}%s {FFD700}te ha dado un {FFFFFF}%s", 
-        CharacterData[playerid][cName], VehicleNames[vehicleIndex]);
-    SendClientMessage(targetid, COLOR_ADMIN_MSG, string);
-    
-    printf("[Admin] %s dio %s (ID: %d) a %s via busqueda", 
-        CharacterData[playerid][cName], VehicleNames[vehicleIndex], vehicleid, CharacterData[targetid][cName]);
+    printf("[DEBUG OnDialogAdminDarVehSearch] AdminGiveVehicle finalizado");
     
     return 1;
 }
@@ -802,6 +1010,9 @@ stock OnDialogAdminDarWeapon(playerid, response, listitem)
         format(string, sizeof(string), "{00FF00}Has recibido {FFFFFF}%s {00FF00}(0 balas). Necesitas cargadores para usar el arma.",
             WeaponData[weaponIdx][wName]);
         SendClientMessage(targetid, COLOR_SUCCESS, string);
+        
+        // Refrescar inventario para mostrar el item inmediatamente
+        ShowInventoryDialog(targetid);
     }
     else
     {
@@ -859,6 +1070,9 @@ stock OnDialogAdminDarWeaponQuantity(playerid, response, const inputtext[])
             CharacterData[playerid][cName], quantity, WeaponData[weaponIdx][wName]);
         SendClientMessage(targetid, COLOR_ADMIN_MSG, string);
         
+        // Refrescar inventario para mostrar el item inmediatamente
+        ShowInventoryDialog(targetid);
+        
         printf("[Admin] %s dio %d x %s a %s via /dar", 
             CharacterData[playerid][cName], quantity, WeaponData[weaponIdx][wName], CharacterData[targetid][cName]);
     }
@@ -904,6 +1118,9 @@ stock OnDialogAdminDarMagazine(playerid, response, listitem)
         format(string, sizeof(string), "{00FF00}Has recibido {FFFFFF}%s {00FF00}(%d balas).",
             MagazineData[magIdx][mName], capacity);
         SendClientMessage(targetid, COLOR_SUCCESS, string);
+        
+        // Refrescar inventario para mostrar el item inmediatamente
+        ShowInventoryDialog(targetid);
     }
     else
     {
@@ -960,6 +1177,9 @@ stock OnDialogAdminDarMagQty(playerid, response, const inputtext[])
         format(string, sizeof(string), "{FFD700}Admin {FFFFFF}%s {FFD700}te ha dado {FFFFFF}%d x %s",
             CharacterData[playerid][cName], quantity, MagazineData[magIdx][mName]);
         SendClientMessage(targetid, COLOR_ADMIN_MSG, string);
+        
+        // Refrescar inventario para mostrar el item inmediatamente
+        ShowInventoryDialog(targetid);
         
         printf("[Admin] %s dio %d x %s a %s via /dar", 
             CharacterData[playerid][cName], quantity, MagazineData[magIdx][mName], CharacterData[targetid][cName]);

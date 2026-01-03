@@ -831,6 +831,8 @@ stock GetProximityColor(Float:distance, Float:maxDistance)
 
 public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 {
+    printf("[DEBUG OnDialogResponse] INICIO - Player:%d DialogID:%d Response:%d Listitem:%d", playerid, dialogid, response, listitem);
+    
     // Dialog del sistema de dudas
     if(dialogid == DIALOG_DUDA_LIST)
         return OnDialogDudaList(playerid, response, listitem);
@@ -867,6 +869,8 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
     if(dialogid == DIALOG_ADMIN_PANEL_INV)
         return 1;
     
+    printf("[DEBUG OnDialogResponse] Paso seccion ADMIN_PANEL, continua a /dar");
+    
     // Dialogs del comando /dar
     if(dialogid == DIALOG_ADMIN_DAR)
         return OnDialogAdminDar(playerid, response, listitem);
@@ -874,12 +878,24 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
         return OnDialogAdminDarMoney(playerid, response, listitem);
     if(dialogid == DIALOG_ADMIN_DAR_SKIN)
         return OnDialogAdminDarSkin(playerid, response, inputtext);
+    
+    printf("[DEBUG OnDialogResponse] Antes de check DIALOG_ADMIN_DAR_VEHICLE - dialogid:%d vs %d", dialogid, DIALOG_ADMIN_DAR_VEHICLE);
+    
     if(dialogid == DIALOG_ADMIN_DAR_VEHICLE)
+    {
+        printf("[DEBUG OnDialogResponse] DIALOG_ADMIN_DAR_VEHICLE detectado - Player:%d Response:%d Listitem:%d", playerid, response, listitem);
         return OnDialogAdminDarVehicle(playerid, response, listitem);
+    }
     if(dialogid == DIALOG_ADMIN_DAR_VEHICLE_SEARCH)
+    {
+        printf("[DEBUG OnDialogResponse] DIALOG_ADMIN_DAR_VEHICLE_SEARCH detectado - Player:%d Response:%d Input:'%s'", playerid, response, inputtext);
         return OnDialogAdminDarVehicleSearch(playerid, response, inputtext);
+    }
     if(dialogid == DIALOG_ADMIN_DAR_VEHICLE_RESULT)
+    {
+        printf("[DEBUG OnDialogResponse] DIALOG_ADMIN_DAR_VEHICLE_RESULT detectado - Player:%d Response:%d Listitem:%d", playerid, response, listitem);
         return OnDialogAdminDarVehSearch(playerid, response, listitem, inputtext);
+    }
     if(dialogid == DIALOG_ADMIN_DAR_WEAPON)
         return OnDialogAdminDarWeapon(playerid, response, listitem);
     if(dialogid == DIALOG_ADMIN_DAR_WEAPON_QUANTITY)
@@ -897,6 +913,8 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
     if(dialogid == DIALOG_INVENTORY_DROP)
         return OnDialogInventoryDrop(playerid, response, listitem);
     
+    printf("[DEBUG OnDialogResponse] Paso seccion INVENTORY");
+    
     // Dialog de negocios
     if(dialogid == DIALOG_BUSINESS_SHOP)
         return OnDialogBusinessShop(playerid, response, listitem);
@@ -912,6 +930,8 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
     
     if(dialogid == DIALOG_BUSINESS_CONFIG + 3)
         return OnDialogBusinessCfgIcon(playerid, response, inputtext);
+    
+    printf("[DEBUG OnDialogResponse] Paso seccion BUSINESS, llegando a switch");
     
     if(dialogid == DIALOG_PLAYER_FIND_VEHICLE)
     {

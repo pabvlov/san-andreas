@@ -316,6 +316,9 @@ stock OnDealershipPurchase(playerid, dialogid, response, listitem)
         {
             printf("[Dealership] 2 llaves dadas correctamente a %s (placa: %s)", 
                 CharacterData[playerid][cName], plate);
+            
+            // Refrescar inventario para mostrar las llaves inmediatamente
+            ShowInventoryDialog(playerid);
         }
         else
         {

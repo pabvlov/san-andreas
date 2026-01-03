@@ -1045,6 +1045,9 @@ public OnBusinessPurchase(playerid)
     // Dar item al inventario
     GivePlayerItem(playerid, itemid, 1, "");
     
+    // Refrescar inventario para mostrar el item inmediatamente
+    ShowInventoryDialog(playerid);
+    
     // Teletransportar al interior si esta configurado
     if(BusinessData[businessIdx][bInteriorX] != 0.0 || BusinessData[businessIdx][bInteriorY] != 0.0)
     {

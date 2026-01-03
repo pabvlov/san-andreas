@@ -1142,7 +1142,8 @@ stock PlayerHasVehicleKey(playerid, vehicleid)
 // COMANDOS
 // ============================================================================
 
-CMD:inventario(playerid, params[])
+// Función para mostrar el diálogo de inventario (puede ser llamada desde cualquier lugar)
+stock ShowInventoryDialog(playerid)
 {
     new dialogStr[2048], itemName[64], line[128];
     strcat(dialogStr, "Ubicacion\tItem\tCantidad\n");
@@ -1235,7 +1236,11 @@ CMD:inventario(playerid, params[])
     
     ShowPlayerDialog(playerid, DIALOG_INVENTORY, DIALOG_STYLE_TABLIST_HEADERS,
         "Inventario", dialogStr, "Equipar/Usar", "Cerrar");
-    
+}
+
+CMD:inventario(playerid, params[])
+{
+    ShowInventoryDialog(playerid);
     return 1;
 }
 
@@ -1670,6 +1675,9 @@ CMD:giveitem(playerid, params[])
         format(string, sizeof(string), "{00FF00}Has recibido %d x %s",
             quantity, itemName);
         SendClientMessage(targetid, COLOR_SUCCESS, string);
+        
+        // Refrescar inventario para mostrar el item inmediatamente
+        ShowInventoryDialog(targetid);
     }
     else
     {

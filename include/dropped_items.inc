@@ -296,6 +296,9 @@ stock PickupDroppedItem(playerid, dropSlot)
         return 0;
     }
     
+    // Refrescar inventario para mostrar el item inmediatamente
+    ShowInventoryDialog(playerid);
+    
     // Eliminar objeto del mundo
     DestroyDynamicObject(DroppedItems[dropSlot][dObjectID]);
     
